@@ -918,9 +918,10 @@
       if (!select) continue
       var choice = (settings.slots && settings.slots[slot]) || { kind: 'none' }
       var wanted = choice.kind === 'custom' ? 'custom:' + choice.id : choice.kind
+      var defaultName = (settings.defaultNames || {})[slot]
       select.textContent = ''
       select.appendChild(cueOption('无', 'none', p))
-      select.appendChild(cueOption('默认', 'builtin', p))
+      select.appendChild(cueOption(defaultName ? defaultName + '（默认）' : '默认', 'builtin', p))
       for (var j = 0; j < uploads.length; j += 1) {
         select.appendChild(cueOption(uploads[j].name, 'custom:' + uploads[j].id, p))
       }

@@ -344,3 +344,33 @@ test('a cue pointing at a deleted file is repaired, not listed as a phantom', as
     `no phantom entry may be listed, saw ${JSON.stringify(labels)}`,
   )
 })
+test('the default working cue is named, and the chime keeps the plain label', async () => {
+  const source = await readFile(CLIENT, 'utf8')
+  const env = makeEnvironment(settingsPayload({ defaultNames: { working: 'let me go' } }))
+  vm.createContext(env.sandbox)
+  vm.runInContext(source, env.sandbox, { filename: 'audio-cue.js' })
+  await flush()
+
+  env.window.__DSH_AUDIO_CUE__.open()
+  const labels = env.created.filter((entry) => typeof entry.text === 'string')
+  assert.ok(
+    labels.some((entry) => entry.text === 'let me go（默认）' && entry.value === 'builtin'),
+    'the working cue says what its default actually is',
+  )
+  assert.ok(
+    labels.some((entry) => entry.text === '默认' && entry.value === 'builtin'),
+    'the approval cue still shows the plain default',
+  )
+
+  // A host that names nothing must not get an invented label.
+  const plain = makeEnvironment(settingsPayload())
+  vm.createContext(plain.sandbox)
+  vm.runInContext(source, plain.sandbox, { filename: 'audio-cue.js' })
+  await flush()
+  plain.window.__DSH_AUDIO_CUE__.open()
+  const plainLabels = plain.created.filter((entry) => typeof entry.text === 'string').map((entry) => entry.text)
+  assert.ok(
+    !plainLabels.some((label) => label.includes('（默认）')),
+    `no host name, no decorated label, saw ${JSON.stringify(plainLabels)}`,
+  )
+})

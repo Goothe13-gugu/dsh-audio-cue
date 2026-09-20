@@ -798,3 +798,11 @@ test('ending the turn clears a question that was never answered', () => {
   emit({ type: 'turn/end', data: { turn: 1, reason: 'cancelled' } })
   assert.deepEqual([read().working, read().waiting], [0, 0], 'a cancelled turn leaves nothing pending')
 })
+test('the panel is told which default it is offering', async () => {
+  await withStore(async () => {
+    const { routes } = mount()
+    const { payload } = await readState(routes)
+    assert.equal(payload.defaultNames.working, 'let me go', 'the working default names its track')
+    assert.equal(payload.defaultNames.approval, undefined, 'the chime needs no name')
+  })
+})
