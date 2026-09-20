@@ -108,7 +108,7 @@ curl http://127.0.0.1:8151/dsh-audio-cue/state.json
 ## 开发
 
 ```sh
-git clone https://github.com/OWNER/dsh-audio-cue
+git clone https://github.com/Goothe/dsh-audio-cue
 cd dsh-audio-cue
 dsh plugin --profile web add link:$PWD   # link 安装，不用发包
 ```

@@ -39,14 +39,14 @@
     "node": ">=22"
   },
   "license": "MIT",
-  "author": "OWNER",
+  "author": "Goothe",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/OWNER/dsh-audio-cue.git"
+    "url": "git+https://github.com/Goothe/dsh-audio-cue.git"
   },
-  "homepage": "https://github.com/OWNER/dsh-audio-cue#readme",
+  "homepage": "https://github.com/Goothe/dsh-audio-cue#readme",
   "bugs": {
-    "url": "https://github.com/OWNER/dsh-audio-cue/issues"
+    "url": "https://github.com/Goothe/dsh-audio-cue/issues"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1"

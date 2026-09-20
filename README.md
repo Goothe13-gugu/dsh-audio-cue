@@ -134,7 +134,7 @@ nothing is running, please open an issue with that response body.
 ## Development
 
 ```sh
-git clone https://github.com/OWNER/dsh-audio-cue
+git clone https://github.com/Goothe/dsh-audio-cue
 cd dsh-audio-cue
 dsh plugin --profile web add link:$PWD   # link: install, no publish needed
 ```
