@@ -169,8 +169,9 @@ function makeEnvironment(payload = settingsPayload()) {
     constructor(text, value) {
       this.text = text
       this.value = value
-      // Recorded like every other construct, so a test can read the choice list
-      // a select was built from without a real DOM.
+      this.style = {}
+      // Recorded like every other construct, so a test can read the choice list a
+      // select was built from without a real DOM.
       created.push(this)
     }
   }
@@ -289,42 +290,36 @@ test('an older host falls back to the built-in assets instead of going silent', 
   )
 })
 
-test('the panel offers the shipped library beside the imports', async () => {
+test('the cue list is legible in dark mode', async () => {
   const source = await readFile(CLIENT, 'utf8')
-  const env = makeEnvironment(
-    settingsPayload({
-      library: [
-        { id: 'let-me-go', name: 'let me go', type: 'audio/mp4', author: '星落落_oi', source: 'BV1freb6iErC' },
-      ],
-      uploads: [{ id: 'abc123', name: 'mine.mp3', bytes: 1234, type: 'audio/mpeg', addedAt: 1 }],
-    }),
-  )
+  const env = makeEnvironment()
+  // The host marks its own dark theme on the body, and the panel follows it.
+  env.document.body.attributes['data-ds-dark-theme'] = ''
   vm.createContext(env.sandbox)
   vm.runInContext(source, env.sandbox, { filename: 'audio-cue.js' })
   await flush()
 
   env.window.__DSH_AUDIO_CUE__.open()
 
-  // `Option` instances are what a select is built from; collecting their values
-  // is how this test sees the choice list without a real DOM.
-  const values = env.created
-    .filter((entry) => typeof entry.text === 'string' && typeof entry.value === 'string')
-    .map((entry) => entry.value)
-  for (const expected of ['none', 'builtin', 'library:let-me-go', 'custom:abc123']) {
-    assert.ok(values.includes(expected), `the cue list is missing ${expected}`)
-  }
+  const select = env.created.find((entry) => entry.tagName === 'SELECT')
+  assert.equal(select.style.colorScheme, 'dark', 'the platform popup is told which scheme to draw')
 
-  assert.ok(
-    env.created.some((entry) => typeof entry.textContent === 'string' && entry.textContent.includes('星落落_oi')),
-    'the attribution is visible in the panel, not only in the payload',
-  )
+  // The regression: the popup is drawn by the platform, so an option with no
+  // colors of its own rendered white text on a white list.
+  const options = env.created.filter((entry) => typeof entry.text === 'string' && entry.style)
+  assert.ok(options.length >= 2, `expected list entries, saw ${options.length}`)
+  for (const option of options) {
+    assert.equal(option.style.background, 'rgba(30,30,32,0.98)', 'the option carries the panel background')
+    assert.equal(option.style.color, '#e9e9ec', 'and text that contrasts with it')
+  }
 })
 
-test('selecting a library cue stores that choice', async () => {
+test('a cue pointing at a deleted file is repaired, not listed as a phantom', async () => {
   const source = await readFile(CLIENT, 'utf8')
   const env = makeEnvironment(
     settingsPayload({
-      library: [{ id: 'let-me-go', name: 'let me go', type: 'audio/mp4', author: 'a', source: 'b' }],
+      slots: { working: { kind: 'custom', id: 'gone' }, approval: { kind: 'builtin' } },
+      uploads: [],
     }),
   )
   const puts = []
@@ -337,12 +332,15 @@ test('selecting a library cue stores that choice', async () => {
   vm.runInContext(source, env.sandbox, { filename: 'audio-cue.js' })
   await flush()
 
-  env.window.__DSH_AUDIO_CUE__.open()
-  const select = env.created.find((entry) => entry.tagName === 'SELECT')
-  assert.ok(select, 'the panel built a cue select')
-  select.value = 'library:let-me-go'
-  select.dispatch('change')
+  assert.equal(puts.length, 1, 'the stale reference is repaired exactly once')
+  assert.deepEqual(puts[0].slots.working, { kind: 'builtin' })
 
-  assert.equal(puts.length, 1, 'exactly one settings write')
-  assert.deepEqual(puts[0].slots.working, { kind: 'library', id: 'let-me-go' })
+  env.window.__DSH_AUDIO_CUE__.open()
+  const labels = env.created
+    .filter((entry) => typeof entry.text === 'string')
+    .map((entry) => entry.text)
+  assert.ok(
+    !labels.some((label) => label.includes('已删除')),
+    `no phantom entry may be listed, saw ${JSON.stringify(labels)}`,
+  )
 })

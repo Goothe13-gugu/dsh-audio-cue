@@ -155,12 +155,40 @@
   function adoptSettings(payload) {
     var before = audioKey()
     settings = payload
+    if (healStaleChoices()) saveSettings()
     // The first payload is also what supplies the version token, so no element
     // is built before one arrives.
     if (!built || before !== audioKey()) rebuildAudio()
     renderPanel()
     applyPosition()
     apply(lastState)
+  }
+
+  /** Cue choices already repaired, so a host that keeps reporting one cannot loop. */
+  var healedChoices = {}
+
+  /**
+   * Point any cue whose file no longer exists back at the default. A stored
+   * reference to a deleted file would leave that cue silent with no explanation,
+   * and the panel offering a choice that cannot play.
+   * @returns whether anything changed and should be saved.
+   */
+  function healStaleChoices() {
+    var uploads = settings.uploads || []
+    var changed = false
+    for (var i = 0; i < SLOTS.length; i += 1) {
+      var slot = SLOTS[i]
+      var choice = settings.slots && settings.slots[slot]
+      if (!choice || choice.kind !== 'custom') continue
+      var key = slot + ':' + choice.id
+      if (healedChoices[key]) continue
+      var present = uploads.some(function (entry) { return entry.id === choice.id })
+      if (present) continue
+      healedChoices[key] = true
+      settings.slots[slot] = { kind: 'builtin' }
+      changed = true
+    }
+    return changed
   }
 
   /** Identity of everything that could change the bytes a slot serves. */
@@ -585,6 +613,18 @@
     return node
   }
 
+  /**
+   * One entry in a cue list. The colors go on the option as well as on the
+   * select, because the popup is drawn by the platform rather than by the page:
+   * without them the list renders white text on a white panel in dark mode.
+   */
+  function cueOption(label, value, p) {
+    var option = new Option(label, value)
+    option.style.background = p.bg
+    option.style.color = p.fg
+    return option
+  }
+
   function fieldButton(label, onClick) {
     var node = el('button', {
       cursor: 'pointer',
@@ -621,6 +661,9 @@
       border: '1px solid ' + p.line,
       background: p.bg,
       color: p.fg,
+      // The platform draws select popups and range tracks, and picks its own
+      // colors unless the scheme is declared.
+      colorScheme: p.key === 'dark' ? 'dark' : 'light',
       font: '12px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif',
       boxShadow: '0 8px 28px rgba(0,0,0,0.28)',
       display: 'none',
@@ -667,10 +710,6 @@
     fields.selects = {}
     for (var i = 0; i < SLOTS.length; i += 1) panel.appendChild(buildSlotRow(SLOTS[i], p))
 
-    panel.appendChild(el('div', { marginTop: '10px', color: p.dim }, '素材库（内置）'))
-    fields.library = el('div', { display: 'flex', flexDirection: 'column', gap: '4px' })
-    panel.appendChild(fields.library)
-
     panel.appendChild(el('div', { marginTop: '10px', color: p.dim }, '已导入'))
     fields.list = el('div', { display: 'flex', flexDirection: 'column', gap: '4px' })
     panel.appendChild(fields.list)
@@ -708,7 +747,8 @@
       borderRadius: '6px',
       border: '1px solid ' + p.line,
       background: p.field,
-      color: 'inherit',
+      color: p.fg,
+      colorScheme: p.key === 'dark' ? 'dark' : 'light',
       font: 'inherit',
     })
     select.addEventListener('change', function () {
@@ -739,7 +779,6 @@
   function applySlotChoice(slot, value) {
     if (value === 'none') settings.slots[slot] = { kind: 'none' }
     else if (value === 'builtin') settings.slots[slot] = { kind: 'builtin' }
-    else if (value.indexOf('library:') === 0) settings.slots[slot] = { kind: 'library', id: value.slice(8) }
     else if (value.indexOf('custom:') === 0) settings.slots[slot] = { kind: 'custom', id: value.slice(7) }
     else return
     setStatus('')
@@ -777,39 +816,6 @@
       window.setTimeout(function () {
         if (previewAudio === audio) stopPreview()
       }, PREVIEW_MS)
-    }
-  }
-
-  /** One shipped cue, with the attribution that ships beside it. */
-  function buildLibraryRow(entry, p) {
-    var line = el('div', { display: 'flex', alignItems: 'center', gap: '6px' })
-    var copy = el('div', { flex: '1', minWidth: '0' })
-    copy.appendChild(el('div', { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }, entry.name))
-    copy.appendChild(el('div', {
-      color: p.dim,
-      fontSize: '11px',
-      overflow: 'hidden',
-      textOverflow: 'ellipsis',
-      whiteSpace: 'nowrap',
-    }, entry.author ? entry.author + ' · ' + entry.source : ''))
-    line.appendChild(copy)
-    line.appendChild(fieldButton('▶', function () {
-      previewLibrary(entry)
-    }))
-    return line
-  }
-
-  /** Preview one shipped cue, whatever the slots currently use. */
-  function previewLibrary(entry) {
-    stopPreview()
-    var audio = new Audio(ROUTE + '/library/' + entry.id)
-    audio.volume = Math.max(0.35, settings.volume)
-    previewAudio = audio
-    var playing = audio.play()
-    if (playing && typeof playing.catch === 'function') {
-      playing.catch(function () {
-        setStatus('无法试听 ' + entry.name)
-      })
     }
   }
 
@@ -911,36 +917,17 @@
       var select = fields.selects[slot]
       if (!select) continue
       var choice = (settings.slots && settings.slots[slot]) || { kind: 'none' }
-      var library = settings.library || []
-      var wanted = choice.kind === 'custom'
-        ? 'custom:' + choice.id
-        : choice.kind === 'library'
-          ? 'library:' + choice.id
-          : choice.kind
+      var wanted = choice.kind === 'custom' ? 'custom:' + choice.id : choice.kind
       select.textContent = ''
-      select.appendChild(new Option('无', 'none'))
-      select.appendChild(new Option('默认', 'builtin'))
-      for (var m = 0; m < library.length; m += 1) {
-        select.appendChild(new Option(library[m].name + '（素材库）', 'library:' + library[m].id))
-      }
+      select.appendChild(cueOption('无', 'none', p))
+      select.appendChild(cueOption('默认', 'builtin', p))
       for (var j = 0; j < uploads.length; j += 1) {
-        select.appendChild(new Option(uploads[j].name, 'custom:' + uploads[j].id))
+        select.appendChild(cueOption(uploads[j].name, 'custom:' + uploads[j].id, p))
       }
-      var known = choice.kind === 'custom'
-        ? uploads.some(function (entry) { return entry.id === choice.id })
-        : choice.kind === 'library'
-          ? library.some(function (entry) { return entry.id === choice.id })
-          : true
-      if (!known) select.appendChild(new Option('（已不可用）', wanted))
+      // A choice whose file is gone is repaired in adoptSettings, so the list
+      // never has to carry a phantom entry for it.
       select.value = wanted
       select.disabled = legacy
-    }
-
-    if (fields.library) {
-      fields.library.textContent = ''
-      var shelf = settings.library || []
-      if (shelf.length === 0) fields.library.appendChild(el('span', { color: p.dim }, '（无内置素材）'))
-      for (var s = 0; s < shelf.length; s += 1) fields.library.appendChild(buildLibraryRow(shelf[s], p))
     }
 
     if (fields.list) {

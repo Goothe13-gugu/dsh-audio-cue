@@ -142,7 +142,6 @@ test('registers its routes and its page injection', () => {
       ['prefix', '/dsh-audio-cue/api/uploads'],
       ['prefix', '/dsh-audio-cue/asset'],
       ['prefix', '/dsh-audio-cue/audio'],
-      ['prefix', '/dsh-audio-cue/library'],
       ['prefix', '/dsh-audio-cue/uploads'],
     ].sort(),
   )
@@ -260,7 +259,7 @@ test('unmounting releases every route, listener, and open stream', () => {
   const res = fakeResponse()
   events.handler(fakeRequest('/dsh-audio-cue/events'), res)
 
-  assert.equal(routes.length, 10)
+  assert.equal(routes.length, 9)
   assert.equal(cleanups.length, 1)
   cleanups[0]()
 
@@ -291,7 +290,6 @@ test('the browser half and the host agree on the store contract', async () => {
       `${prefix}/api/uploads`,
       `${prefix}/audio`,
       `${prefix}/uploads`,
-      `${prefix}/library`,
       `${prefix}/events`,
       `${prefix}/client.js`,
     ]) {
@@ -706,66 +704,97 @@ test('caches only what the URL pins, and never an unversioned answer', async () 
     assert.ok(payload.boot.length > 0)
   })
 })
-test('the shipped library is listed, selectable, and servable', async () => {
+test('the working cue ships as the bundled track, with a decoder fallback behind it', async () => {
   await withStore(async () => {
     const { routes } = mount()
-    const { payload } = await readState(routes)
+    const audio = routeFor(routes, '/dsh-audio-cue/audio')
 
-    assert.ok(Array.isArray(payload.library), 'the payload carries the library')
-    assert.ok(payload.library.length >= 1, 'and it is not empty')
-    const entry = payload.library[0]
-    assert.equal(entry.author, '星落落_oi', 'the attribution travels with the payload')
-    assert.equal(entry.source, 'BV1freb6iErC')
-    assert.ok(entry.type.startsWith('audio/'), 'with the type it is served as')
+    // A browser that decodes AAC gets the shipped track.
+    const modern = fakeResponse()
+    audio.handler(fakeRequest('/dsh-audio-cue/audio/working?types=ogg,mp3,wav,m4a'), modern)
+    assert.equal(modern.status, 200)
+    assert.equal(modern.headers['Content-Type'], 'audio/mp4')
+    assert.ok(modern.body.length > 100000, `expected the real track, got ${modern.body.length} bytes`)
 
-    // Every entry has to be servable, or the panel would offer a dead choice.
-    for (const item of payload.library) {
-      const served = fakeResponse()
-      routeFor(routes, '/dsh-audio-cue/library').handler(fakeRequest(`/dsh-audio-cue/library/${item.id}`), served)
-      assert.equal(served.status, 200, `library entry ${item.id} does not serve`)
-      assert.equal(served.headers['Content-Type'], item.type)
-      assert.ok(served.body.length > 1000, `library entry ${item.id} served almost nothing`)
-      assert.match(served.headers['Cache-Control'], /immutable/, 'a shipped cue never changes')
-    }
+    // One that cannot still gets sound instead of a 404.
+    const legacy = fakeResponse()
+    audio.handler(fakeRequest('/dsh-audio-cue/audio/working?types=ogg,mp3'), legacy)
+    assert.equal(legacy.status, 200)
+    assert.equal(legacy.headers['Content-Type'], 'audio/ogg')
 
-    const unknown = fakeResponse()
-    routeFor(routes, '/dsh-audio-cue/library').handler(fakeRequest('/dsh-audio-cue/library/nope'), unknown)
-    assert.equal(unknown.status, 404)
-
-    // Selecting one is an ordinary settings write.
-    const put = bodyRequest(
-      '/dsh-audio-cue/api/settings',
-      'PUT',
-      { 'content-type': 'application/json' },
-      Buffer.from(JSON.stringify({
-        muted: false,
-        volume: 0.5,
-        slots: { working: { kind: 'library', id: entry.id }, approval: { kind: 'builtin' } },
-      })),
-    )
-    const saved = fakeResponse()
-    await routeFor(routes, '/dsh-audio-cue/api/settings').handler(put, saved)
-    assert.equal(JSON.parse(saved.body).slots.working.kind, 'library')
-
-    // And the cue resolves through the slot, like every other source.
-    const cue = fakeResponse()
-    routeFor(routes, '/dsh-audio-cue/audio').handler(
-      fakeRequest(`/dsh-audio-cue/audio/working?v=boot-library-${entry.id}`),
-      cue,
-    )
-    assert.equal(cue.status, 200)
-    assert.equal(cue.headers['Content-Type'], entry.type)
-    assert.match(cue.headers['Cache-Control'], /immutable/)
-
-    // A library id that was never shipped must not become a stored choice.
-    const bogus = bodyRequest(
-      '/dsh-audio-cue/api/settings',
-      'PUT',
-      { 'content-type': 'application/json' },
-      Buffer.from(JSON.stringify({ slots: { working: { kind: 'library', id: 'never-shipped' } } })),
-    )
-    const healed = fakeResponse()
-    await routeFor(routes, '/dsh-audio-cue/api/settings').handler(bogus, healed)
-    assert.equal(JSON.parse(healed.body).slots.working.kind, 'builtin', 'an unknown id falls back')
+    // The approval cue is untouched by any of this.
+    const chime = fakeResponse()
+    audio.handler(fakeRequest('/dsh-audio-cue/audio/approval?types=mp3'), chime)
+    assert.equal(chime.headers['Content-Type'], 'audio/mpeg')
   })
+})
+
+test('a question to a person is a wait state, exactly like an approval', () => {
+  const { routes, listeners } = mount()
+  const state = routeFor(routes, '/dsh-audio-cue/state.json')
+  const read = () => {
+    const res = fakeResponse()
+    state.handler(fakeRequest('/dsh-audio-cue/state.json'), res)
+    return snapshotOf(res)
+  }
+  const emit = (event) => listeners.get('session/event')({ id: 'a' }, event)
+
+  emit({ type: 'turn/start', data: { turn: 1 } })
+  assert.deepEqual([read().working, read().waiting], [1, 0])
+
+  emit({
+    type: 'tool/call',
+    seq: 42,
+    data: { turn: 1, step: 1, callId: 'c1', name: 'ask_user_question', arguments: { questions: [{ id: 'q1' }] } },
+  })
+  assert.equal(read().waiting, 1, 'the model is blocked on a person')
+  assert.equal(read().working, 1, 'and the turn is still open')
+
+  // A result belonging to a different call must not be mistaken for the answer.
+  emit({ type: 'tool/result', seq: 43, sourceEventSeqs: [7], data: { turn: 1, step: 1, message: {} } })
+  assert.equal(read().waiting, 1, 'an unrelated tool result does not answer the question')
+
+  emit({ type: 'tool/result', seq: 44, sourceEventSeqs: [42], data: { turn: 1, step: 1, message: {} } })
+  assert.equal(read().waiting, 0, 'the answer resumes the work')
+  assert.equal(read().working, 1)
+})
+
+test('an ordinary tool call is work, not a question', () => {
+  const { routes, listeners } = mount()
+  const state = routeFor(routes, '/dsh-audio-cue/state.json')
+  const read = () => {
+    const res = fakeResponse()
+    state.handler(fakeRequest('/dsh-audio-cue/state.json'), res)
+    return snapshotOf(res)
+  }
+  const emit = (event) => listeners.get('session/event')({ id: 'a' }, event)
+
+  emit({ type: 'turn/start', data: { turn: 1 } })
+  emit({ type: 'tool/call', seq: 1, data: { turn: 1, step: 1, callId: 'c1', name: 'pwsh', arguments: { command: 'ls' } } })
+  assert.equal(read().waiting, 0, 'running a tool is not waiting for a person')
+
+  // A renamed ask tool still counts, because its arguments carry the questions.
+  emit({
+    type: 'tool/call',
+    seq: 2,
+    data: { turn: 1, step: 1, callId: 'c2', name: 'ask_something_else', arguments: { questions: [{ id: 'q' }] } },
+  })
+  assert.equal(read().waiting, 1, 'the shape of the request is enough to recognise it')
+})
+
+test('ending the turn clears a question that was never answered', () => {
+  const { routes, listeners } = mount()
+  const state = routeFor(routes, '/dsh-audio-cue/state.json')
+  const read = () => {
+    const res = fakeResponse()
+    state.handler(fakeRequest('/dsh-audio-cue/state.json'), res)
+    return snapshotOf(res)
+  }
+  const emit = (event) => listeners.get('session/event')({ id: 'a' }, event)
+
+  emit({ type: 'turn/start', data: { turn: 1 } })
+  emit({ type: 'tool/call', seq: 5, data: { turn: 1, step: 1, callId: 'c', name: 'ask_user_question', arguments: {} } })
+  assert.equal(read().waiting, 1)
+  emit({ type: 'turn/end', data: { turn: 1, reason: 'cancelled' } })
+  assert.deepEqual([read().working, read().waiting], [0, 0], 'a cancelled turn leaves nothing pending')
 })
