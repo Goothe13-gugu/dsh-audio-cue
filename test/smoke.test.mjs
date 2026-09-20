@@ -342,3 +342,47 @@ test('the keepalive is a data frame, not an SSE comment', () => {
     res.close()
   }
 })
+test('activity opens a turn this host never saw start', () => {
+  const { routes, listeners } = mount()
+  const state = routeFor(routes, '/dsh-audio-cue/state.json')
+  const read = () => {
+    const res = fakeResponse()
+    state.handler(fakeRequest('/dsh-audio-cue/state.json'), res)
+    return snapshotOf(res)
+  }
+  const emit = (session, event) => listeners.get('session/event')(session, event)
+
+  // The host mounted mid-turn: `turn/start` happened in a previous process.
+  assert.equal(read().working, 0, 'starts idle')
+  emit({ id: 'a' }, { type: 'assistant/chunk', data: {} })
+  assert.equal(read().working, 1, 'streamed output proves a turn is in flight')
+
+  emit({ id: 'a' }, { type: 'tool/call', data: {} })
+  emit({ id: 'a' }, { type: 'step/start', data: {} })
+  assert.equal(read().working, 1, 'further activity does not double-count')
+
+  emit({ id: 'a' }, { type: 'turn/end', data: { turn: 1 } })
+  assert.equal(read().working, 0, 'only turn/end closes a session')
+
+  // An event that can occur between turns must not open one.
+  emit({ id: 'b' }, { type: 'compaction/start', data: {} })
+  assert.equal(read().working, 0, 'compaction between turns leaves the sound off')
+})
+
+test('activity does not flood the stream', () => {
+  const { routes, listeners } = mount()
+  const res = fakeResponse()
+  routeFor(routes, '/dsh-audio-cue/events').handler(fakeRequest('/dsh-audio-cue/events'), res)
+  res.chunks.length = 0
+
+  const emit = (session, event) => listeners.get('session/event')(session, event)
+  emit({ id: 'a' }, { type: 'turn/start', data: { turn: 1 } })
+  assert.equal(res.chunks.length, 1, 'the transition itself is one frame')
+
+  for (let i = 0; i < 500; i += 1) emit({ id: 'a' }, { type: 'assistant/chunk', data: { i } })
+  assert.equal(res.chunks.length, 1, '500 chunks of an already-open turn add no frames')
+
+  emit({ id: 'a' }, { type: 'turn/end', data: { turn: 1 } })
+  assert.equal(res.chunks.length, 2, 'closing is one more frame')
+  res.close()
+})

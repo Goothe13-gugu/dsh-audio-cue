@@ -51,6 +51,7 @@ number:
 | `turn/end` | session becomes idle |
 | `approval/asked` | session becomes **waiting for you** |
 | `approval/decided` | session resumes working |
+| `assistant/chunk`, `tool/call`, `tool/result`, `step/start` | session becomes **working** if it was not already |
 
 The result is published as a Server-Sent Events stream at
 `/dsh-audio-cue/events`, and the browser half turns it into sound:
@@ -65,6 +66,10 @@ A few properties fall out of this design:
 
 - **Subagents count as work.** Any session with an open turn keeps the loop
   playing, so delegated work is not silent.
+- **A turn that started before this host did still counts.** Streamed output,
+  tool calls, and agent steps can only happen inside a turn, so they open one on
+  their own. That covers a host that mounted mid-turn or missed a frame, and it
+  cannot leave the sound stuck on, because only `turn/end` closes a session.
 - **A page reload cannot inherit a stale state.** Every connection receives a
   full snapshot first, and the host keeps the state in memory only.
 - **A dead host means silence.** The stream carries a heartbeat; if it stops, the
@@ -73,7 +78,8 @@ A few properties fall out of this design:
 You can inspect the current state yourself:
 
 ```sh
-curl http://127.0.0.1:8151/dsh-audio-cue/state.json
+# Use the port your GUI is served on (see DSH_WEB_URL) -- it changes between launches.
+curl http://127.0.0.1:<port>/dsh-audio-cue/state.json
 # {"bootId":"k3f9a1","seq":7,"working":1,"waiting":0}
 ```
 

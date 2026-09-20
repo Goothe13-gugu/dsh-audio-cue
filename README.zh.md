@@ -44,6 +44,7 @@ dsh plugin --profile web remove dsh-audio-cue
 | `turn/end` | 该会话回到空闲 |
 | `approval/asked` | 该会话进入**等你处理** |
 | `approval/decided` | 恢复工作中 |
+| `assistant/chunk`、`tool/call`、`tool/result`、`step/start` | 若该会话尚未打开，则标记为**工作中** |
 
 结果通过 `Server-Sent Events` 发布在 `/dsh-audio-cue/events`，浏览器半把它变成声音：
 
@@ -56,13 +57,15 @@ waiting > 0                 -> 静音 + 每次转换响一声提示音
 这个设计顺带得到几个性质：
 
 - **子代理也算工作**。任何有未结束回合的会话都会让环境音继续，委派出去的工作不会变成静音。
+- **本宿主启动前就已开始的回合也算数**。流式输出、工具调用、步骤推进只可能发生在回合内，所以它们会自行把回合打开。中途挂载、漏掉一帧都能自愈；也不会把声音卡住——只有 `turn/end` 会关闭会话。
 - **刷新页面不会继承过期状态**。每条连接先收到一次全量快照，而宿主只把状态放在内存里。
 - **宿主挂了就静音**。事件流带心跳，心跳停了页面会自动安静，而不是永远循环下去。
 
 状态可以自己查：
 
 ```sh
-curl http://127.0.0.1:8151/dsh-audio-cue/state.json
+# 端口用 GUI 实际监听的（见 DSH_WEB_URL），每次启动都可能不同
+curl http://127.0.0.1:<port>/dsh-audio-cue/state.json
 # {"bootId":"k3f9a1","seq":7,"working":1,"waiting":0}
 ```
 

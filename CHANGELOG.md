@@ -22,6 +22,11 @@ First release.
   playback whenever the state says work is in flight but the audio element is
   paused, repairs a stalled fade, and forces a fresh connection when the stream
   really does go quiet.
+- Work is now inferred from activity as well as from turn boundaries. Streamed
+  output, tool calls, and agent steps open a turn by themselves, so a host that
+  mounted mid-turn reports the work instead of staying silent until the next
+  turn; only `turn/end` closes a session. Broadcasting is also deduplicated, so
+  a turn streaming hundreds of chunks still sends one frame per real change.
 - Placeholder audio, synthesized with `ffmpeg` sine partials:
 
   ```sh
