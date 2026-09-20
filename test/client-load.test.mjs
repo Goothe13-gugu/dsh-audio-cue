@@ -169,6 +169,9 @@ function makeEnvironment(payload = settingsPayload()) {
     constructor(text, value) {
       this.text = text
       this.value = value
+      // Recorded like every other construct, so a test can read the choice list
+      // a select was built from without a real DOM.
+      created.push(this)
     }
   }
 
@@ -284,4 +287,62 @@ test('an older host falls back to the built-in assets instead of going silent', 
     env.created.some((entry) => entry.src === '/dsh-audio-cue/asset/loop.ogg'),
     'and the built-in loop is used',
   )
+})
+
+test('the panel offers the shipped library beside the imports', async () => {
+  const source = await readFile(CLIENT, 'utf8')
+  const env = makeEnvironment(
+    settingsPayload({
+      library: [
+        { id: 'let-me-go', name: 'let me go', type: 'audio/mp4', author: '星落落_oi', source: 'BV1freb6iErC' },
+      ],
+      uploads: [{ id: 'abc123', name: 'mine.mp3', bytes: 1234, type: 'audio/mpeg', addedAt: 1 }],
+    }),
+  )
+  vm.createContext(env.sandbox)
+  vm.runInContext(source, env.sandbox, { filename: 'audio-cue.js' })
+  await flush()
+
+  env.window.__DSH_AUDIO_CUE__.open()
+
+  // `Option` instances are what a select is built from; collecting their values
+  // is how this test sees the choice list without a real DOM.
+  const values = env.created
+    .filter((entry) => typeof entry.text === 'string' && typeof entry.value === 'string')
+    .map((entry) => entry.value)
+  for (const expected of ['none', 'builtin', 'library:let-me-go', 'custom:abc123']) {
+    assert.ok(values.includes(expected), `the cue list is missing ${expected}`)
+  }
+
+  assert.ok(
+    env.created.some((entry) => typeof entry.textContent === 'string' && entry.textContent.includes('星落落_oi')),
+    'the attribution is visible in the panel, not only in the payload',
+  )
+})
+
+test('selecting a library cue stores that choice', async () => {
+  const source = await readFile(CLIENT, 'utf8')
+  const env = makeEnvironment(
+    settingsPayload({
+      library: [{ id: 'let-me-go', name: 'let me go', type: 'audio/mp4', author: 'a', source: 'b' }],
+    }),
+  )
+  const puts = []
+  const inner = env.sandbox.fetch
+  env.sandbox.fetch = (url, init) => {
+    if (init && init.method === 'PUT') puts.push(JSON.parse(init.body))
+    return inner(url, init)
+  }
+  vm.createContext(env.sandbox)
+  vm.runInContext(source, env.sandbox, { filename: 'audio-cue.js' })
+  await flush()
+
+  env.window.__DSH_AUDIO_CUE__.open()
+  const select = env.created.find((entry) => entry.tagName === 'SELECT')
+  assert.ok(select, 'the panel built a cue select')
+  select.value = 'library:let-me-go'
+  select.dispatch('change')
+
+  assert.equal(puts.length, 1, 'exactly one settings write')
+  assert.deepEqual(puts[0].slots.working, { kind: 'library', id: 'let-me-go' })
 })

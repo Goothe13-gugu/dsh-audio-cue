@@ -142,6 +142,7 @@ test('registers its routes and its page injection', () => {
       ['prefix', '/dsh-audio-cue/api/uploads'],
       ['prefix', '/dsh-audio-cue/asset'],
       ['prefix', '/dsh-audio-cue/audio'],
+      ['prefix', '/dsh-audio-cue/library'],
       ['prefix', '/dsh-audio-cue/uploads'],
     ].sort(),
   )
@@ -259,7 +260,7 @@ test('unmounting releases every route, listener, and open stream', () => {
   const res = fakeResponse()
   events.handler(fakeRequest('/dsh-audio-cue/events'), res)
 
-  assert.equal(routes.length, 9)
+  assert.equal(routes.length, 10)
   assert.equal(cleanups.length, 1)
   cleanups[0]()
 
@@ -290,6 +291,7 @@ test('the browser half and the host agree on the store contract', async () => {
       `${prefix}/api/uploads`,
       `${prefix}/audio`,
       `${prefix}/uploads`,
+      `${prefix}/library`,
       `${prefix}/events`,
       `${prefix}/client.js`,
     ]) {
@@ -702,5 +704,68 @@ test('caches only what the URL pins, and never an unversioned answer', async () 
     const { payload } = await readState(routes)
     assert.equal(typeof payload.boot, 'string')
     assert.ok(payload.boot.length > 0)
+  })
+})
+test('the shipped library is listed, selectable, and servable', async () => {
+  await withStore(async () => {
+    const { routes } = mount()
+    const { payload } = await readState(routes)
+
+    assert.ok(Array.isArray(payload.library), 'the payload carries the library')
+    assert.ok(payload.library.length >= 1, 'and it is not empty')
+    const entry = payload.library[0]
+    assert.equal(entry.author, '星落落_oi', 'the attribution travels with the payload')
+    assert.equal(entry.source, 'BV1freb6iErC')
+    assert.ok(entry.type.startsWith('audio/'), 'with the type it is served as')
+
+    // Every entry has to be servable, or the panel would offer a dead choice.
+    for (const item of payload.library) {
+      const served = fakeResponse()
+      routeFor(routes, '/dsh-audio-cue/library').handler(fakeRequest(`/dsh-audio-cue/library/${item.id}`), served)
+      assert.equal(served.status, 200, `library entry ${item.id} does not serve`)
+      assert.equal(served.headers['Content-Type'], item.type)
+      assert.ok(served.body.length > 1000, `library entry ${item.id} served almost nothing`)
+      assert.match(served.headers['Cache-Control'], /immutable/, 'a shipped cue never changes')
+    }
+
+    const unknown = fakeResponse()
+    routeFor(routes, '/dsh-audio-cue/library').handler(fakeRequest('/dsh-audio-cue/library/nope'), unknown)
+    assert.equal(unknown.status, 404)
+
+    // Selecting one is an ordinary settings write.
+    const put = bodyRequest(
+      '/dsh-audio-cue/api/settings',
+      'PUT',
+      { 'content-type': 'application/json' },
+      Buffer.from(JSON.stringify({
+        muted: false,
+        volume: 0.5,
+        slots: { working: { kind: 'library', id: entry.id }, approval: { kind: 'builtin' } },
+      })),
+    )
+    const saved = fakeResponse()
+    await routeFor(routes, '/dsh-audio-cue/api/settings').handler(put, saved)
+    assert.equal(JSON.parse(saved.body).slots.working.kind, 'library')
+
+    // And the cue resolves through the slot, like every other source.
+    const cue = fakeResponse()
+    routeFor(routes, '/dsh-audio-cue/audio').handler(
+      fakeRequest(`/dsh-audio-cue/audio/working?v=boot-library-${entry.id}`),
+      cue,
+    )
+    assert.equal(cue.status, 200)
+    assert.equal(cue.headers['Content-Type'], entry.type)
+    assert.match(cue.headers['Cache-Control'], /immutable/)
+
+    // A library id that was never shipped must not become a stored choice.
+    const bogus = bodyRequest(
+      '/dsh-audio-cue/api/settings',
+      'PUT',
+      { 'content-type': 'application/json' },
+      Buffer.from(JSON.stringify({ slots: { working: { kind: 'library', id: 'never-shipped' } } })),
+    )
+    const healed = fakeResponse()
+    await routeFor(routes, '/dsh-audio-cue/api/settings').handler(bogus, healed)
+    assert.equal(JSON.parse(healed.body).slots.working.kind, 'builtin', 'an unknown id falls back')
   })
 })
