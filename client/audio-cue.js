@@ -153,12 +153,19 @@
 
   /** Take a payload from the host, reloading the audio only if its sources moved. */
   function adoptSettings(payload) {
-    var before = sourceKey()
+    var before = audioKey()
     settings = payload
-    if (before !== sourceKey()) rebuildAudio()
+    // The first payload is also what supplies the version token, so no element
+    // is built before one arrives.
+    if (!built || before !== audioKey()) rebuildAudio()
     renderPanel()
     applyPosition()
     apply(lastState)
+  }
+
+  /** Identity of everything that could change the bytes a slot serves. */
+  function audioKey() {
+    return (settings.boot || 'boot') + '|' + sourceKey()
   }
 
   /** Everything that decides an audio URL, so a reload happens only when needed. */
@@ -179,10 +186,22 @@
     return !!choice && choice.kind !== 'none'
   }
 
+  /**
+   * The version token in an audio URL. Host answers are cacheable for a year, so
+   * this has to change exactly when the bytes could: the host's boot id (a
+   * restart can change what a slot resolves to) plus which file that slot uses.
+   * The store revision is deliberately absent -- a volume change bumps it, and
+   * rebuilding the element mid-playback would cut the sound for no reason.
+   */
+  function versionToken(slot) {
+    var choice = (settings.slots && settings.slots[slot]) || { kind: 'none' }
+    return (settings.boot || 'boot') + '-' + choice.kind + '-' + (choice.id || '')
+  }
+
   /** The URL the host resolves for a slot. */
   function slotUrl(slot) {
     if (legacy) return BUILTIN_SRC[slot]
-    return ROUTE + '/audio/' + slot + '?v=' + settings.revision + '&types=' + TYPES.join(',')
+    return ROUTE + '/audio/' + slot + '?v=' + versionToken(slot) + '&types=' + TYPES.join(',')
   }
 
   // --- audio ---------------------------------------------------------------
@@ -191,6 +210,8 @@
   var working = null
   /** The one-shot chime, or null when its cue is turned off. */
   var approval = null
+  /** Whether the elements exist yet: none is built before the first payload. */
+  var built = false
   var current = 0
   var target = 0
   var fadeTimer = null
@@ -213,6 +234,7 @@
     target = 0
     working = hasCue('working') ? makeAudio(slotUrl('working'), true) : null
     approval = hasCue('approval') ? makeAudio(slotUrl('approval'), false) : null
+    built = true
   }
 
   function stopAudio() {
@@ -756,8 +778,9 @@
   /** Preview one imported file directly, whatever the slots currently use. */
   function previewUpload(entry) {
     stopPreview()
-    var audio = new Audio(ROUTE + '/uploads/' + entry.id + '?v=' + settings.revision)
-    audio.volume = Math.max(0.35, settings.volume)
+    // The id is immutable, so no version token is needed and the browser may keep
+    // the file after the first preview.
+    var audio = new Audio(ROUTE + '/uploads/' + entry.id)    audio.volume = Math.max(0.35, settings.volume)
     previewAudio = audio
     var playing = audio.play()
     if (playing && typeof playing.catch === 'function') {
@@ -920,8 +943,6 @@
   }
 
   // --- wiring --------------------------------------------------------------
-
-  rebuildAudio()
 
   if (document.body) mountButton()
   else document.addEventListener('DOMContentLoaded', mountButton)

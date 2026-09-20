@@ -322,6 +322,11 @@ test('the browser half and the host agree on the store contract', async () => {
     for (const type of preferred) {
       assert.ok(accepted.includes(type), `the browser prefers ${type}, which the host would refuse`)
     }
+
+    // The host caches audio for a year, so the URL has to carry the boot id: a
+    // restart can change what a slot resolves to, and a stale answer would
+    // otherwise be served for the rest of that year.
+    assert.ok(source.includes('settings.boot'), 'the audio URL must carry the host boot id')
   })
 })
 
@@ -657,5 +662,45 @@ test('a cue set to none answers 404 rather than silence with no reason', async (
     routeFor(routes, '/dsh-audio-cue/audio').handler(fakeRequest('/dsh-audio-cue/audio/approval?types=mp3'), on)
     assert.equal(on.status, 200)
     assert.equal(on.headers['Content-Type'], 'audio/mpeg')
+  })
+})
+test('caches only what the URL pins, and never an unversioned answer', async () => {
+  await withStore(async () => {
+    const { routes } = mount()
+    const audio = routeFor(routes, '/dsh-audio-cue/audio')
+
+    const bare = fakeResponse()
+    audio.handler(fakeRequest('/dsh-audio-cue/audio/working'), bare)
+    assert.match(bare.headers['Cache-Control'], /no-store/, 'an unversioned request must not be cached')
+
+    const pinned = fakeResponse()
+    audio.handler(fakeRequest('/dsh-audio-cue/audio/working?v=boot-builtin-'), pinned)
+    assert.match(pinned.headers['Cache-Control'], /immutable/, 'a versioned request may be cached for a year')
+
+    // An upload's id is never reused, so its bytes are pinned by construction.
+    const up = fakeResponse()
+    await routeForKind(routes, 'exact', '/dsh-audio-cue/api/uploads').handler(
+      bodyRequest('/dsh-audio-cue/api/uploads', 'POST', { 'content-type': 'audio/ogg', 'x-file-name': 'x.ogg' }, Buffer.from('OggS')),
+      up,
+    )
+    const id = JSON.parse(up.body).uploads[0].id
+
+    const file = fakeResponse()
+    routeFor(routes, '/dsh-audio-cue/uploads').handler(fakeRequest(`/dsh-audio-cue/uploads/${id}`), file)
+    assert.match(file.headers['Cache-Control'], /immutable/)
+
+    const custom = fakeResponse()
+    audio.handler(fakeRequest(`/dsh-audio-cue/audio/working?v=boot-custom-${id}`), custom)
+    assert.match(custom.headers['Cache-Control'], /immutable/)
+
+    // The built-in assets stay uncached: an author may replace one in place.
+    const asset = fakeResponse()
+    routeFor(routes, '/dsh-audio-cue/asset').handler(fakeRequest('/dsh-audio-cue/asset/loop.ogg'), asset)
+    assert.match(asset.headers['Cache-Control'], /no-store/)
+
+    // The page cannot build a version token without the boot id.
+    const { payload } = await readState(routes)
+    assert.equal(typeof payload.boot, 'string')
+    assert.ok(payload.boot.length > 0)
   })
 })
