@@ -1,0 +1,16 @@
+# dsh-audio-cue — DSH bundle patch (the mount declaration).
+#
+# A DSH profile composes its plugin tree by stacking one patch layer per bundle
+# listed in `dsh.profile.bundles`, then the profile's own cordis.patch.yml, then
+# the home-level patch. This file is that first layer for this package: one
+# inserted row that mounts the plugin into the host, alongside the web server it
+# depends on.
+#
+# Install:
+#   dsh plugin --profile web add dsh-audio-cue
+# Then restart the profile so the host picks the new row up.
+
+- insert:
+    - id: dsh-audio-cue
+      name: dsh-audio-cue
+      inject: [webServer]

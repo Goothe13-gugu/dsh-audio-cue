@@ -1,0 +1,54 @@
+{
+  "name": "dsh-audio-cue",
+  "version": "0.1.0",
+  "description": "Play ambient audio while DeepSeek Harness is thinking or working, and chime when it needs you.",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "client",
+    "assets",
+    "cordis.patch.yml",
+    "README.md",
+    "README.zh.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --test test/"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek",
+    "deepseek-harness",
+    "audio",
+    "ambient",
+    "notification"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "MIT",
+  "author": "OWNER",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OWNER/dsh-audio-cue.git"
+  },
+  "homepage": "https://github.com/OWNER/dsh-audio-cue#readme",
+  "bugs": {
+    "url": "https://github.com/OWNER/dsh-audio-cue/issues"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1"
+  }
+}

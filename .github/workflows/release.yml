@@ -1,0 +1,43 @@
+name: release
+
+# Publishing a GitHub release from a version tag publishes the same version to
+# npm. Bump "version" in package.json, tag it `v<version>`, push the tag.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Required for npm provenance.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: 'https://registry.npmjs.org'
+
+      # Refuse to publish a tag whose version does not match package.json — this
+      # is the only check that keeps the tag and the published artifact aligned.
+      - name: Verify the tag matches package.json
+        run: |
+          pkg="v$(node -p "require('./package.json').version")"
+          if [ "$pkg" != "${GITHUB_REF_NAME}" ]; then
+            echo "tag ${GITHUB_REF_NAME} does not match package.json (${pkg})" >&2
+            exit 1
+          fi
+
+      # No build step: the published files are the authored files.
+      - name: Check the published file list
+        run: npm pack --dry-run
+
+      - name: Publish
+        run: npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

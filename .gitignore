@@ -1,0 +1,15 @@
+# Dependencies (only ever installed inside a DSH profile, never in this repo)
+node_modules/
+pnpm-lock.yaml
+package-lock.json
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+npm-debug.log*
