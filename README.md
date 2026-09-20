@@ -40,6 +40,58 @@ Uninstall:
 dsh plugin --profile web remove dsh-audio-cue
 ```
 
+### Let an agent install it
+
+If you would rather not run any of this by hand, paste the following to the agent
+you are already talking to. It is written to fail loudly rather than report
+success it did not verify, because every step below has a quiet failure mode.
+
+<details>
+<summary>Prompt for an AI agent</summary>
+
+```text
+Install the DeepSeek Harness plugin `dsh-audio-cue` into the `web` profile, then
+verify it. Do not publish anything and do not modify the plugin's repository.
+
+Two things will send you down the wrong path unless you check them first:
+
+1. DSH_HOME. A profile lives at `$DSH_HOME/profiles/<name>`, and the default home
+   is `~/.dsh`. The desktop app uses its own (on Windows,
+   `%APPDATA%\dsh-desktop\harness`). Installing into the wrong home quietly
+   creates a second, empty profile that has no other plugins in it, so work out
+   which home the running harness uses first, and set DSH_HOME for every command.
+2. The CLI. `dsh` is not necessarily on PATH: the desktop app ships it inside its
+   application resources, at
+   `…/resources/app/node_modules/@deepseek-ai/dsh/lib/bin.js`, runnable with the
+   Node bundled beside it at `…/resources/app/node_modules/node/bin/node`. Note
+   that `dsh plugin` forwards its arguments to pnpm, so pnpm must be on PATH too.
+
+Then:
+
+1. Tell me which harness home you found and which profile you will install into.
+2. Run: dsh plugin --profile web add dsh-audio-cue
+3. Show me that the profile's package.json now lists `dsh-audio-cue` in both
+   `dependencies` and `dsh.profile.bundles`.
+4. Ask me to restart the host, and stop there until I confirm: the plugin row is
+   only mounted when the host starts, and restarting it would end your own
+   session, so it is my job, not yours.
+5. After the restart, verify and show the actual output of each check:
+   - GET http://127.0.0.1:<port>/dsh-audio-cue/state.json returns 200 with JSON
+     containing `working` and `waiting`. <port> is the one the GUI is served on;
+     on the desktop the current URL (including its token) is in the host log
+     under `%APPDATA%\dsh-desktop\logs\harness.log`, on the `dsh web:` line.
+   - The page HTML contains `<script src="/dsh-audio-cue/client.js">`.
+   - `$DSH_HOME/dsh-audio-cue/settings.json` exists after the plugin has been used
+     once.
+6. Tell me plainly which checks passed and which did not, quoting the responses.
+   If something failed, say so instead of summarising it as done.
+
+To uninstall: dsh plugin --profile web remove dsh-audio-cue, then restart the host
+again.
+```
+
+</details>
+
 ## The panel
 
 Click the button beside the sidebar.

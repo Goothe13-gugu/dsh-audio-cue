@@ -34,6 +34,52 @@ dsh plugin --profile web add dsh-audio-cue
 dsh plugin --profile web remove dsh-audio-cue
 ```
 
+### 交给 AI 安装
+
+如果你不想手动执行这些步骤，把下面这段直接发给你正在对话的 agent。它是按"宁可报错也不要谎报成功"写的，因为其中每一步都有一个安静的失败方式。
+
+<details>
+<summary>给 AI agent 的 prompt</summary>
+
+```text
+请为我把 DeepSeek Harness 插件 `dsh-audio-cue` 安装到 `web` profile 并完成验证。
+不要发布任何东西，也不要修改该插件的仓库。
+
+有两件事不先确认就会走错路：
+
+1. DSH_HOME。profile 位于 `$DSH_HOME/profiles/<名字>`，默认 home 是 `~/.dsh`；
+   而桌面版用的是它自己的 home（Windows 下为
+   `%APPDATA%\dsh-desktop\harness`）。装到错误的 home 会安静地创建出第二套空
+   profile——里面连其他插件都没有。所以先确认正在运行的 harness 用的是哪个
+   home，并在每条命令上都设置 DSH_HOME。
+2. CLI。`dsh` 不一定在 PATH 上：桌面版把它打包在应用资源里，路径形如
+   `…/resources/app/node_modules/@deepseek-ai/dsh/lib/bin.js`，可用紧邻的
+   `…/resources/app/node_modules/node/bin/node` 运行。另外 `dsh plugin` 会把参数
+   转发给 pnpm，所以 pnpm 也必须在 PATH 上。
+
+然后：
+
+1. 告诉我你找到的 harness home，以及你将要安装到哪个 profile。
+2. 执行：dsh plugin --profile web add dsh-audio-cue
+3. 向我展示该 profile 的 package.json 里，`dsh-audio-cue` 已同时出现在
+   `dependencies` 和 `dsh.profile.bundles` 中。
+4. 请我重启宿主，然后停在这里等我确认：插件行只在宿主启动时挂载，而重启会
+   终止你自己的会话，所以这件事由我来做，不是由你。
+5. 重启后逐项验证，并给出每一步的真实输出：
+   - GET http://127.0.0.1:<端口>/dsh-audio-cue/state.json 返回 200，JSON 中含
+     `working` 与 `waiting`。<端口> 是 GUI 实际监听的端口；桌面版当前地址
+     （含 token）在宿主日志 `%APPDATA%\dsh-desktop\logs\harness.log` 的
+     `dsh web:` 那一行。
+   - 页面 HTML 中包含 `<script src="/dsh-audio-cue/client.js">`。
+   - 插件被使用过一次之后，`$DSH_HOME/dsh-audio-cue/settings.json` 存在。
+6. 明确告诉我哪些检查通过了、哪些没有，并附上响应内容。如果有失败，就说失败，
+   不要把它概括成"已完成"。
+
+卸载：dsh plugin --profile web remove dsh-audio-cue，然后再次重启宿主。
+```
+
+</details>
+
 ## 面板
 
 点击侧边栏旁边的按钮打开。
