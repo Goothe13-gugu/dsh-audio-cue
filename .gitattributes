@@ -1,0 +1,10 @@
+# Keep LF in the repository on every platform: this package ships .js and .yml
+# files that a Chromium page and the Node host read verbatim.
+* text=auto eol=lf
+
+# Binary assets must never be line-ending converted.
+*.mp3 binary
+*.ogg binary
+*.wav binary
+*.png binary
+*.gif binary
