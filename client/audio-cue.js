@@ -50,6 +50,7 @@
     revision: 1,
     muted: false,
     volume: 0.35,
+    playback: 'resume',
     slots: { working: { kind: 'builtin' }, approval: { kind: 'builtin' } },
     uploads: [],
     limits: { maxUploadBytes: 8 * 1024 * 1024, types: ['ogg', 'mp3', 'wav'] },
@@ -128,6 +129,7 @@
       body: JSON.stringify({
         muted: settings.muted,
         volume: settings.volume,
+        playback: settings.playback,
         slots: settings.slots,
       }),
     })
@@ -240,6 +242,12 @@
   var approval = null
   /** Whether the elements exist yet: none is built before the first payload. */
   var built = false
+  /**
+   * Whether the loop is supposed to be playing right now. Playback mode needs
+   * the edge, not the state: a heartbeat repeats the same snapshot every fifteen
+   * seconds, and rewinding the track on each one would be absurd.
+   */
+  var looping = false
   var current = 0
   var target = 0
   var fadeTimer = null
@@ -325,13 +333,23 @@
     lastState = state
     if (!state) return
     if (state.working > 0 && state.waiting > 0) {
+      looping = false
       fadeTo(0)
       if (!wasWaiting && !settings.muted) playApproval()
       wasWaiting = true
       return
     }
     wasWaiting = false
-    if (settings.muted || !state.working || working === null) {
+    var wantLoop = !settings.muted && state.working > 0 && working !== null
+    if (wantLoop && !looping && settings.playback === 'restart') {
+      try {
+        working.currentTime = 0
+      } catch (err) {
+        // A source that cannot seek is not worth breaking the sound for.
+      }
+    }
+    looping = wantLoop
+    if (!wantLoop) {
       fadeTo(0)
       return
     }
@@ -707,6 +725,26 @@
     volumeRow.appendChild(fields.volumeLabel)
     panel.appendChild(volumeRow)
 
+    var playbackRow = row('播放方式')
+    fields.playback = el('select', {
+      flex: '1',
+      minWidth: '0',
+      padding: '2px 4px',
+      borderRadius: '6px',
+      border: '1px solid ' + p.line,
+      background: p.field,
+      color: p.fg,
+      colorScheme: p.key === 'dark' ? 'dark' : 'light',
+      font: 'inherit',
+    })
+    fields.playback.addEventListener('change', function () {
+      settings.playback = fields.playback.value === 'restart' ? 'restart' : 'resume'
+      adoptSettings(settings)
+      saveSettings()
+    })
+    playbackRow.appendChild(fields.playback)
+    panel.appendChild(playbackRow)
+
     fields.selects = {}
     for (var i = 0; i < SLOTS.length; i += 1) panel.appendChild(buildSlotRow(SLOTS[i], p))
 
@@ -910,6 +948,14 @@
     if (fields.mute) fields.mute.textContent = settings.muted ? '🔇 已静音' : '🔊 已开启'
     if (fields.volume) fields.volume.value = String(Math.round(settings.volume * 100))
     if (fields.volumeLabel) fields.volumeLabel.textContent = Math.round(settings.volume * 100) + '%'
+
+    if (fields.playback) {
+      fields.playback.textContent = ''
+      fields.playback.appendChild(cueOption('继续播放', 'resume', p))
+      fields.playback.appendChild(cueOption('从头开始', 'restart', p))
+      fields.playback.value = settings.playback === 'restart' ? 'restart' : 'resume'
+      fields.playback.disabled = legacy
+    }
 
     var uploads = settings.uploads || []
     for (var i = 0; i < SLOTS.length; i += 1) {

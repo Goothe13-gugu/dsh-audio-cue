@@ -374,3 +374,60 @@ test('the default working cue is named, and the chime keeps the plain label', as
     `no host name, no decorated label, saw ${JSON.stringify(plainLabels)}`,
   )
 })
+test('restart mode rewinds on the edge, and neither mode rewinds on a heartbeat', async () => {
+  const source = await readFile(CLIENT, 'utf8')
+
+  async function runWith(playback) {
+    const env = makeEnvironment(settingsPayload({ playback }))
+    vm.createContext(env.sandbox)
+    vm.runInContext(source, env.sandbox, { filename: 'audio-cue.js' })
+    await flush()
+
+    const feed = env.FakeEventSource.last
+    feed.onmessage({ data: JSON.stringify({ working: 1, waiting: 0 }) })
+    const loop = env.created.find((entry) => typeof entry.src === 'string' && entry.src.includes('/audio/working'))
+    assert.ok(loop, 'the loop element exists')
+    loop.currentTime = 42
+
+    // A heartbeat repeats the same snapshot: it is not a new start.
+    feed.onmessage({ data: JSON.stringify({ working: 1, waiting: 0 }) })
+    assert.equal(loop.currentTime, 42, `${playback}: a repeated frame must not rewind`)
+
+    // Work stops, then starts again: that is the edge.
+    feed.onmessage({ data: JSON.stringify({ working: 0, waiting: 0 }) })
+    feed.onmessage({ data: JSON.stringify({ working: 1, waiting: 0 }) })
+    return loop.currentTime
+  }
+
+  assert.equal(await runWith('restart'), 0, 'restart mode starts the track over')
+  assert.equal(await runWith('resume'), 42, 'resume mode picks up where it stopped')
+})
+
+test('the panel offers both playback modes and stores the choice', async () => {
+  const source = await readFile(CLIENT, 'utf8')
+  const env = makeEnvironment()
+  const puts = []
+  const inner = env.sandbox.fetch
+  env.sandbox.fetch = (url, init) => {
+    if (init && init.method === 'PUT') puts.push(JSON.parse(init.body))
+    return inner(url, init)
+  }
+  vm.createContext(env.sandbox)
+  vm.runInContext(source, env.sandbox, { filename: 'audio-cue.js' })
+  await flush()
+  env.window.__DSH_AUDIO_CUE__.open()
+
+  const labels = env.created.filter((entry) => typeof entry.text === 'string').map((entry) => entry.text)
+  assert.ok(labels.includes('继续播放'), 'the resume option is listed')
+  assert.ok(labels.includes('从头开始'), 'the restart option is listed')
+
+  // Built before the two cue selects, because playback is not a cue.
+  const playback = env.created.filter((entry) => entry.tagName === 'SELECT')[0]
+  assert.ok(playback, 'the playback select exists')
+  assert.equal(playback.value, 'resume', 'and it shows the current mode')
+
+  playback.value = 'restart'
+  playback.dispatch('change')
+  assert.equal(puts.length, 1, 'changing it writes the setting once')
+  assert.equal(puts[0].playback, 'restart')
+})

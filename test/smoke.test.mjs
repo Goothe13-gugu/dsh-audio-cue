@@ -806,3 +806,41 @@ test('the panel is told which default it is offering', async () => {
     assert.equal(payload.defaultNames.approval, undefined, 'the chime needs no name')
   })
 })
+test('the playback mode defaults to resuming, and restarting is remembered', async () => {
+  await withStore(async () => {
+    const { routes } = mount()
+    const before = await readState(routes)
+    assert.equal(before.payload.playback, 'resume', 'out of the box the track picks up where it stopped')
+
+    const put = bodyRequest(
+      '/dsh-audio-cue/api/settings',
+      'PUT',
+      { 'content-type': 'application/json' },
+      Buffer.from(JSON.stringify({
+        muted: false,
+        volume: 0.5,
+        playback: 'restart',
+        slots: { working: { kind: 'builtin' }, approval: { kind: 'builtin' } },
+      })),
+    )
+    const saved = fakeResponse()
+    await routeFor(routes, '/dsh-audio-cue/api/settings').handler(put, saved)
+    assert.equal(JSON.parse(saved.body).playback, 'restart')
+
+    // It has to survive a host restart, like every other setting.
+    const second = mount()
+    const after = await readState(second.routes)
+    assert.equal(after.payload.playback, 'restart')
+
+    // Nonsense falls back rather than being stored.
+    const bogus = bodyRequest(
+      '/dsh-audio-cue/api/settings',
+      'PUT',
+      { 'content-type': 'application/json' },
+      Buffer.from(JSON.stringify({ playback: 'sideways' })),
+    )
+    const healed = fakeResponse()
+    await routeFor(routes, '/dsh-audio-cue/api/settings').handler(bogus, healed)
+    assert.equal(JSON.parse(healed.body).playback, 'resume')
+  })
+})
