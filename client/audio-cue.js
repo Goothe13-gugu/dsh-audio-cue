@@ -780,7 +780,8 @@
     stopPreview()
     // The id is immutable, so no version token is needed and the browser may keep
     // the file after the first preview.
-    var audio = new Audio(ROUTE + '/uploads/' + entry.id)    audio.volume = Math.max(0.35, settings.volume)
+    var audio = new Audio(ROUTE + '/uploads/' + entry.id)
+    audio.volume = Math.max(0.35, settings.volume)
     previewAudio = audio
     var playing = audio.play()
     if (playing && typeof playing.catch === 'function') {
