@@ -15,6 +15,13 @@ First release.
   `data-dsh-sidebar-root` hook so it follows collapsing and resizing instead of
   covering the host's own footer controls. Persisted in `localStorage`, plus a
   `window.__DSH_AUDIO_CUE__` escape hatch (`.setPosition(px)` / `.resetPosition()`).
+- The SSE keepalive now carries the state instead of an SSE comment. EventSource
+  fires no event for a comment, so a long turn -- which transitions only at its
+  start and end -- sent no frame for minutes and the browser half's liveness
+  check faded a running turn to silence. The browser half also re-asserts
+  playback whenever the state says work is in flight but the audio element is
+  paused, repairs a stalled fade, and forces a fresh connection when the stream
+  really does go quiet.
 - Placeholder audio, synthesized with `ffmpeg` sine partials:
 
   ```sh

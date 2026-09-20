@@ -313,3 +313,32 @@ test('prefix routes survive the matcher the server actually uses', () => {
   assert.equal(match('/dsh-audio-cue/state.json')?.kind, 'exact')
   assert.equal(match('/dsh-audio-cue/nope'), undefined, 'nothing claims an unknown path')
 })
+test('the keepalive is a data frame, not an SSE comment', () => {
+  // The regression: a comment keepalive fires no EventSource event, so the
+  // browser half measured liveness from frames that a long turn never sends and
+  // silenced itself mid-turn. The heartbeat has to carry the snapshot.
+  const { routes } = mount()
+  const realSetInterval = globalThis.setInterval
+  const beats = []
+  globalThis.setInterval = (fn, ms) => {
+    beats.push({ fn, ms })
+    return 0
+  }
+  const res = fakeResponse()
+  try {
+    routeFor(routes, '/dsh-audio-cue/events').handler(fakeRequest('/dsh-audio-cue/events'), res)
+    assert.equal(beats.length, 1, 'the stream owns exactly one timer')
+    assert.ok(beats[0].ms > 0 && beats[0].ms <= 30000, 'and it beats often enough to matter')
+    res.chunks.length = 0
+    beats[0].fn()
+    const frame = res.chunks[0]
+    assert.ok(
+      typeof frame === 'string' && frame.startsWith('data: '),
+      `the keepalive must be a data frame, got ${JSON.stringify(frame)}`,
+    )
+    assert.equal(JSON.parse(frame.slice(6)).working, 0)
+  } finally {
+    globalThis.setInterval = realSetInterval
+    res.close()
+  }
+})

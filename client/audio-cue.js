@@ -26,7 +26,7 @@
   var CHIME_VOLUME = 0.9
   var FADE_STEP_MS = 60
   var FADE_FACTOR = 0.18
-  var STALE_MS = 30000
+  var STALE_MS = 45000
 
   /** First source the browser can actually decode wins; the loop prefers Ogg. */
   function makeAudio(candidates, volume) {
@@ -302,23 +302,59 @@
   if (document.body) mountButton()
   else document.addEventListener('DOMContentLoaded', mountButton)
 
-  // Live state. EventSource reconnects on its own; a stream that stops sending
-  // for too long is treated as a dead host, which is also what covers a host
-  // restart mid-turn.
-  var source = new EventSource(ROUTE + '/events')
-  source.onmessage = function (message) {
-    lastFrameAt = Date.now()
-    try {
-      apply(JSON.parse(message.data))
-    } catch (err) {
-      // A malformed frame is not worth breaking the sound for.
+  // Live state. EventSource reconnects by itself after a transport failure, but
+  // a half-open socket stays OPEN and silent forever, so staleness forces a
+  // fresh connection -- and the host answers every connection with a full
+  // snapshot, which is how a client resynchronizes.
+  //
+  // Liveness is measured from `data:` frames only. A comment fires no event,
+  // which is why the host's heartbeat carries the snapshot.
+  var source = null
+
+  function bindSource() {
+    source.onmessage = function (message) {
+      lastFrameAt = Date.now()
+      try {
+        apply(JSON.parse(message.data))
+      } catch (err) {
+        // A malformed frame is not worth breaking the sound for.
+      }
+    }
+    source.onerror = function () {
+      fadeTo(0)
     }
   }
-  source.onerror = function () {
-    fadeTo(0)
+
+  function connect() {
+    source = new EventSource(ROUTE + '/events')
+    lastFrameAt = Date.now()
+    bindSource()
   }
+
+  connect()
+
   window.setInterval(function () {
-    if (Date.now() - lastFrameAt > STALE_MS) fadeTo(0)
+    if (Date.now() - lastFrameAt > STALE_MS) {
+      fadeTo(0)
+      try {
+        source.close()
+      } catch (err) {
+        // Already closed.
+      }
+      connect()
+      return
+    }
+    // Repair a fade that stalled: the ramp only stops itself by reaching the
+    // target, so a timer lost some other way would leave the volume stuck.
+    if (fadeTimer === null && current !== target) fadeTo(target)
+    // Self-heal. Whatever paused the element without telling us -- an autoplay
+    // suspension, an external pause, a play() that was rejected -- the state
+    // still says work is in flight, so assert the sound here instead of staying
+    // silent until the user happens to toggle the button.
+    if (enabled && lastState.working > 0 && lastState.waiting === 0 && loop.paused) {
+      startLoop()
+      fadeTo(LOOP_VOLUME)
+    }
   }, 5000)
 
   window.addEventListener('beforeunload', function () {
@@ -338,7 +374,8 @@
     },
     position: function () {
       return { left: positionLeft(), bottom: BOTTOM }
-    },    toggle: function () {
+    },
+    toggle: function () {
       setEnabled(!enabled)
       return enabled
     },
