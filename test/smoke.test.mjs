@@ -7,6 +7,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 
 import { apply, inject, name } from '../lib/index.js'
 
@@ -99,6 +102,18 @@ function routeFor(routes, path) {
   return route
 }
 
+/**
+ * Same, but for a path two kinds share. `/api/uploads` is deliberately both an
+ * exact route (POST a file) and a prefix route (DELETE one by id), and the real
+ * server resolves exact first — so a test that ignores the kind would exercise
+ * the wrong handler.
+ */
+function routeForKind(routes, kind, path) {
+  const route = routes.find((entry) => entry.kind === kind && entry.path === path)
+  assert.ok(route, `expected a ${kind} route for ${path}`)
+  return route
+}
+
 /** Mount the plugin and hand back everything a test needs to poke at it. */
 function mount() {
   const harness = fakeContext()
@@ -119,10 +134,15 @@ test('registers its routes and its page injection', () => {
   assert.deepEqual(
     routes.map((route) => [route.kind, route.path]).sort(),
     [
+      ['exact', '/dsh-audio-cue/api/settings'],
+      ['exact', '/dsh-audio-cue/api/uploads'],
       ['exact', '/dsh-audio-cue/client.js'],
       ['exact', '/dsh-audio-cue/events'],
       ['exact', '/dsh-audio-cue/state.json'],
+      ['prefix', '/dsh-audio-cue/api/uploads'],
       ['prefix', '/dsh-audio-cue/asset'],
+      ['prefix', '/dsh-audio-cue/audio'],
+      ['prefix', '/dsh-audio-cue/uploads'],
     ].sort(),
   )
   assert.equal(taps.length, 1, 'the raw tap fallback is registered')
@@ -239,7 +259,7 @@ test('unmounting releases every route, listener, and open stream', () => {
   const res = fakeResponse()
   events.handler(fakeRequest('/dsh-audio-cue/events'), res)
 
-  assert.equal(routes.length, 4)
+  assert.equal(routes.length, 9)
   assert.equal(cleanups.length, 1)
   cleanups[0]()
 
@@ -249,33 +269,60 @@ test('unmounting releases every route, listener, and open stream', () => {
   assert.equal(res.ended, true, 'the open stream is closed, not leaked')
 })
 
-test('the browser half and the host agree on routes and asset names', async () => {
+test('the browser half and the host agree on the store contract', async () => {
   const source = await readFile(new URL('../client/audio-cue.js', import.meta.url), 'utf8')
-  const { routes } = mount()
 
-  // The two halves share no code, so the contract is a convention: whatever the
-  // browser half asks for has to be something the host actually serves. This is
-  // the test that catches a renamed asset or a drifted route.
-  const route = /ROUTE = '([^']+)'/.exec(source)
-  assert.ok(route, 'the browser half declares its route prefix')
-  const prefix = route[1]
-  assert.ok(
-    routes.every((entry) => entry.path.startsWith(prefix)),
-    `host routes do not live under ${prefix}`,
-  )
+  // The two halves share no code, so every path and format is a convention. This
+  // is the test that catches a drifted route, a renamed fallback asset, or a
+  // format the browser would prefer and the host would refuse.
+  const prefix = /ROUTE = '([^']+)'/.exec(source)?.[1]
+  assert.ok(prefix, 'the browser half declares its route prefix')
 
-  const assets = [...source.matchAll(/'\/asset\/([a-z0-9.-]+)'/g)].map((match) => match[1])
-  assert.ok(assets.length >= 3, `expected the browser half to reference its assets, saw ${assets.length}`)
-  for (const asset of assets) {
+  await withStore(async () => {
+    const { routes } = mount()
+    assert.ok(
+      routes.every((entry) => entry.path.startsWith(prefix)),
+      `host routes do not live under ${prefix}`,
+    )
+
+    for (const required of [
+      `${prefix}/api/settings`,
+      `${prefix}/api/uploads`,
+      `${prefix}/audio`,
+      `${prefix}/uploads`,
+      `${prefix}/events`,
+      `${prefix}/client.js`,
+    ]) {
+      assert.ok(
+        routes.some((entry) => entry.path === required),
+        `the browser half needs ${required}, which the host does not register`,
+      )
+    }
+
+    // The sources used when the store API is unavailable must still be real
+    // files, or a host/client version mismatch would mean silence.
+    const assets = [...source.matchAll(/'\/asset\/([a-z0-9.-]+)'/g)].map((match) => match[1])
+    assert.ok(assets.length >= 2, `expected fallback assets, saw ${assets.length}`)
+    for (const asset of assets) {
+      const res = fakeResponse()
+      routeFor(routes, `${prefix}/asset`).handler(fakeRequest(`${prefix}/asset/${asset}`), res)
+      assert.equal(res.status, 200, `the browser half falls back to ${asset}, which the host does not serve`)
+      assert.match(res.headers['Content-Type'], /^audio\//, `${asset} is not served as audio`)
+    }
+
+    // Every format the browser might ask for has to be one the host accepts.
+    const order = /var order = \[([^\]]+)\]/.exec(source)
+    assert.ok(order, 'the browser half declares its format preference order')
+    const preferred = [...order[1].matchAll(/'([a-z0-9]+)'/g)].map((match) => match[1])
+    assert.ok(preferred.length >= 3, `expected a preference list, saw ${preferred.length}`)
+
     const res = fakeResponse()
-    routeFor(routes, `${prefix}/asset`).handler(fakeRequest(`${prefix}/asset/${asset}`), res)
-    assert.equal(res.status, 200, `the browser half asks for ${asset}, which the host does not serve`)
-    assert.match(res.headers['Content-Type'], /^audio\//, `${asset} is not served as audio`)
-  }
-
-  for (const endpoint of ['events', 'client.js']) {
-    assert.ok(source.includes(`${prefix}/${endpoint}`) === false || routes.some((entry) => entry.path === `${prefix}/${endpoint}`))
-  }
+    await routeFor(routes, `${prefix}/api/settings`).handler(fakeRequest(`${prefix}/api/settings`), res)
+    const accepted = JSON.parse(res.body).limits.types
+    for (const type of preferred) {
+      assert.ok(accepted.includes(type), `the browser prefers ${type}, which the host would refuse`)
+    }
+  })
 })
 
 test('prefix routes survive the matcher the server actually uses', () => {
@@ -385,4 +432,230 @@ test('activity does not flood the stream', () => {
   emit({ id: 'a' }, { type: 'turn/end', data: { turn: 1 } })
   assert.equal(res.chunks.length, 2, 'closing is one more frame')
   res.close()
+})
+/** Mount the plugin against a throwaway store, then clean it up. */
+async function withStore(fn) {
+  const home = mkdtempSync(path.join(os.tmpdir(), 'dsh-audio-cue-'))
+  const before = process.env.DSH_HOME
+  process.env.DSH_HOME = home
+  try {
+    await fn(home)
+  } finally {
+    if (before === undefined) delete process.env.DSH_HOME
+    else process.env.DSH_HOME = before
+    rmSync(home, { recursive: true, force: true })
+  }
+}
+
+/** A request that actually delivers a body, the way the webserver would. */
+function bodyRequest(url, method, headers, body) {
+  const handlers = new Map()
+  const req = {
+    url,
+    method,
+    headers,
+    on(event, handler) {
+      handlers.set(event, handler)
+      // Registered in the order `readBody` uses, and delivered on a microtask so
+      // both listeners exist before either fires.
+      if (event === 'data') queueMicrotask(() => handler(body))
+      if (event === 'end') queueMicrotask(() => handler())
+      return req
+    },
+    destroy() {},
+    close() {},
+  }
+  return req
+}
+
+async function readState(routes, path = '/dsh-audio-cue/api/settings') {
+  const res = fakeResponse()
+  await routeFor(routes, path).handler(fakeRequest(path), res)
+  return { status: res.status, payload: res.body === '' ? null : JSON.parse(res.body) }
+}
+
+test('reports defaults when nothing has been configured', async () => {
+  await withStore(async () => {
+    const { routes } = mount()
+    const { status, payload } = await readState(routes)
+    assert.equal(status, 200)
+    assert.equal(payload.muted, false, 'sound is on out of the box')
+    assert.equal(payload.volume, 0.35)
+    assert.deepEqual(payload.slots, { working: { kind: 'builtin' }, approval: { kind: 'builtin' } })
+    assert.deepEqual(payload.uploads, [])
+    assert.ok(payload.limits.maxUploadBytes > 0)
+    assert.ok(payload.limits.types.includes('mp3'))
+  })
+})
+
+test('persists a settings change for the next mount to read', async () => {
+  await withStore(async () => {
+    const first = mount()
+    const put = bodyRequest(
+      '/dsh-audio-cue/api/settings',
+      'PUT',
+      { 'content-type': 'application/json' },
+      Buffer.from(JSON.stringify({
+        muted: true,
+        volume: 0.8,
+        slots: { working: { kind: 'none' }, approval: { kind: 'builtin' } },
+      })),
+    )
+    const res = fakeResponse()
+    await routeFor(first.routes, '/dsh-audio-cue/api/settings').handler(put, res)
+    assert.equal(res.status, 200)
+    assert.equal(JSON.parse(res.body).volume, 0.8)
+
+    // A second mount reads the same store: that is what durable has to mean, and
+    // it is also what makes the settings survive a browser cache wipe.
+    const second = mount()
+    const { payload } = await readState(second.routes)
+    assert.equal(payload.muted, true)
+    assert.equal(payload.volume, 0.8)
+    assert.equal(payload.slots.working.kind, 'none')
+  })
+})
+
+test('an unreadable store falls back instead of failing to mount', async () => {
+  await withStore(async (home) => {
+    mkdirSync(path.join(home, 'dsh-audio-cue'), { recursive: true })
+    writeFileSync(path.join(home, 'dsh-audio-cue', 'settings.json'), '{ this is not json')
+    const { routes } = mount()
+    const { status, payload } = await readState(routes)
+    assert.equal(status, 200, 'a corrupt file must not stop the plugin')
+    assert.equal(payload.volume, 0.35, 'defaults are used instead')
+  })
+})
+
+test('stores an import, selects it, and serves it back byte for byte', async () => {
+  await withStore(async () => {
+    const { routes } = mount()
+    const audio = Buffer.from('ID3fake-mp3-payload')
+    const res = fakeResponse()
+    await routeForKind(routes, 'exact', '/dsh-audio-cue/api/uploads').handler(
+      bodyRequest(
+        '/dsh-audio-cue/api/uploads?slot=working',
+        'POST',
+        {
+          'content-type': 'audio/mpeg',
+          'content-length': String(audio.length),
+          'x-file-name': encodeURIComponent('my loop.mp3'),
+        },
+        audio,
+      ),
+      res,
+    )
+    assert.equal(res.status, 200)
+    const payload = JSON.parse(res.body)
+    assert.equal(payload.uploads.length, 1)
+    assert.equal(payload.uploads[0].name, 'my loop.mp3')
+    assert.equal(payload.uploads[0].bytes, audio.length)
+    assert.equal(payload.slots.working.kind, 'custom', 'importing for a cue selects it')
+    assert.equal(payload.slots.working.id, payload.uploads[0].id)
+
+    // The cue resolves through the slot, not through the client.
+    const served = fakeResponse()
+    routeFor(routes, '/dsh-audio-cue/audio').handler(fakeRequest('/dsh-audio-cue/audio/working'), served)
+    assert.equal(served.status, 200)
+    assert.equal(served.headers['Content-Type'], 'audio/mpeg')
+    assert.equal(served.body, audio.toString())
+
+    // And the file itself is reachable for the panel's previews.
+    const direct = fakeResponse()
+    routeFor(routes, '/dsh-audio-cue/uploads').handler(
+      fakeRequest(`/dsh-audio-cue/uploads/${payload.uploads[0].id}`),
+      direct,
+    )
+    assert.equal(direct.status, 200)
+    assert.equal(direct.body, audio.toString())
+  })
+})
+
+test('refuses an import that is not audio, or is too large', async () => {
+  await withStore(async () => {
+    const { routes } = mount()
+    const route = routeForKind(routes, 'exact', '/dsh-audio-cue/api/uploads')
+
+    const wrongType = fakeResponse()
+    await route.handler(
+      bodyRequest('/dsh-audio-cue/api/uploads', 'POST', { 'content-type': 'application/pdf', 'x-file-name': 'x.pdf' }, Buffer.from('%PDF')),
+      wrongType,
+    )
+    assert.equal(wrongType.status, 415)
+
+    const tooBig = fakeResponse()
+    await route.handler(
+      bodyRequest('/dsh-audio-cue/api/uploads', 'POST', { 'content-type': 'audio/mpeg', 'content-length': String(9 * 1024 * 1024) }, Buffer.from('x')),
+      tooBig,
+    )
+    assert.equal(tooBig.status, 413)
+
+    // The file name is the fallback when the browser reports an opaque type,
+    // which it does for several perfectly valid audio formats.
+    const byName = fakeResponse()
+    await route.handler(
+      bodyRequest('/dsh-audio-cue/api/uploads', 'POST', { 'content-type': 'application/octet-stream', 'x-file-name': 'loop.ogg' }, Buffer.from('OggS-data')),
+      byName,
+    )
+    assert.equal(byName.status, 200)
+    assert.equal(JSON.parse(byName.body).uploads[0].type, 'audio/ogg')
+  })
+})
+
+test('deleting an import drops it and resets every cue that used it', async () => {
+  await withStore(async () => {
+    const { routes } = mount()
+    const up = fakeResponse()
+    await routeForKind(routes, 'exact', '/dsh-audio-cue/api/uploads').handler(
+      bodyRequest(
+        '/dsh-audio-cue/api/uploads?slot=approval',
+        'POST',
+        { 'content-type': 'audio/ogg', 'x-file-name': 'chime.ogg' },
+        Buffer.from('OggS-data'),
+      ),
+      up,
+    )
+    const id = JSON.parse(up.body).uploads[0].id
+
+    const del = fakeResponse()
+    await routeForKind(routes, 'prefix', '/dsh-audio-cue/api/uploads').handler(
+      fakeRequest(`/dsh-audio-cue/api/uploads/${id}`, 'DELETE'),
+      del,
+    )
+    assert.equal(del.status, 200)
+    const payload = JSON.parse(del.body)
+    assert.deepEqual(payload.uploads, [])
+    assert.equal(payload.slots.approval.kind, 'builtin', 'the cue falls back instead of pointing at nothing')
+
+    const gone = fakeResponse()
+    routeFor(routes, '/dsh-audio-cue/uploads').handler(fakeRequest(`/dsh-audio-cue/uploads/${id}`), gone)
+    assert.equal(gone.status, 404)
+  })
+})
+
+test('a cue set to none answers 404 rather than silence with no reason', async () => {
+  await withStore(async () => {
+    const { routes } = mount()
+    const put = bodyRequest(
+      '/dsh-audio-cue/api/settings',
+      'PUT',
+      { 'content-type': 'application/json' },
+      Buffer.from(JSON.stringify({
+        muted: false,
+        volume: 0.5,
+        slots: { working: { kind: 'none' }, approval: { kind: 'builtin' } },
+      })),
+    )
+    await routeFor(routes, '/dsh-audio-cue/api/settings').handler(put, fakeResponse())
+
+    const off = fakeResponse()
+    routeFor(routes, '/dsh-audio-cue/audio').handler(fakeRequest('/dsh-audio-cue/audio/working'), off)
+    assert.equal(off.status, 404)
+    assert.match(off.body, /turned off/)
+
+    const on = fakeResponse()
+    routeFor(routes, '/dsh-audio-cue/audio').handler(fakeRequest('/dsh-audio-cue/audio/approval?types=mp3'), on)
+    assert.equal(on.status, 200)
+    assert.equal(on.headers['Content-Type'], 'audio/mpeg')
+  })
 })
