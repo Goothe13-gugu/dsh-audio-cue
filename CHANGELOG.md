@@ -11,8 +11,10 @@ First release.
 - Browser half: fades a looping ambient track in while work is in flight, fades
   it out and plays one chime when the agent asks for approval, and goes silent
   when the host stops answering.
-- Bottom-left mute toggle persisted in `localStorage`, plus a
-  `window.__DSH_AUDIO_CUE__` escape hatch.
+- Mute toggle docked to the right edge of the host sidebar, measured from the
+  `data-dsh-sidebar-root` hook so it follows collapsing and resizing instead of
+  covering the host's own footer controls. Persisted in `localStorage`, plus a
+  `window.__DSH_AUDIO_CUE__` escape hatch (`.setPosition(px)` / `.resetPosition()`).
 - Placeholder audio, synthesized with `ffmpeg` sine partials:
 
   ```sh

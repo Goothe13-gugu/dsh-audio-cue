@@ -11,7 +11,7 @@ DeepSeek Harness **思考和工作时自动播放环境音**，需要你介入�
 - **工作中**——只要还有任何会话（含子代理）处于进行中的回合，柔和的 4 秒环境音就淡入并持续播放。
 - **等你处理**——代理请求审批时，环境音淡出并响一声两音提示音。
 - **空闲**——环境音自动淡出，工作停下来就不会有声音残留。
-- **左下角 22px 开关**一键静音，选择会被记住。没有设置页，没有配置文件。
+- **22px 开关停靠在侧边栏右侧**，一键静音，选择会被记住。没有设置页，没有配置文件。
 
 ## 安装
 
@@ -72,9 +72,10 @@ curl http://127.0.0.1:8151/dsh-audio-cue/state.json
 
 | 做什么 | 怎么做 |
 | --- | --- |
-| 静音 / 恢复 | 点左下角的 🔇 按钮 |
+| 静音 / 恢复 | 点侧边栏右侧的 🔇 按钮 |
+| 挪动按钮 | `__DSH_AUDIO_CUE__.setPosition(px)`；`resetPosition()` 回到侧边栏边缘 |
 | 跨刷新记住 | `localStorage["dsh-audio-cue.enabled"]`（`"on"` / `"off"`） |
-| 脚本控制 / 调试 | `window.__DSH_AUDIO_CUE__` —— `.toggle()`、`.setEnabled(bool)`、`.state()` |
+| 脚本控制 / 调试 | `window.__DSH_AUDIO_CUE__` —— `.toggle()`、`.setEnabled(bool)`、`.setPosition(px)`、`.state()` |
 | 新浏览器的默认值 | 默认**开启**；把该 storage 键设为 `"off"` 可改默认 |
 
 音量常量（`LOOP_VOLUME`、`CHIME_VOLUME`、`FADE_FACTOR`）在 `client/audio-cue.js` 顶部。

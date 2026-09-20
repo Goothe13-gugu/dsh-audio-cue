@@ -15,7 +15,7 @@ chime the moment it **needs you**.
   the agent asks for approval.
 - **Idle** — the loop fades out on its own. Nothing keeps playing after the work
   stops.
-- **One 22px toggle** in the bottom-left corner mutes it; the choice is
+- **One 22px toggle** docks to the right edge of the host sidebar and mutes it; the choice is
   remembered. No settings page, no configuration file.
 
 ## Install
@@ -83,9 +83,10 @@ There is no config file. Everything lives in the page:
 
 | What | How |
 | --- | --- |
-| Mute / unmute | Click the 🔇 button in the bottom-left corner |
+| Mute / unmute | Click the 🔇 button beside the sidebar |
+| Move the button | `__DSH_AUDIO_CUE__.setPosition(px)`; `resetPosition()` returns it to the sidebar edge |
 | Remembered across reloads | `localStorage["dsh-audio-cue.enabled"]` (`"on"` / `"off"`) |
-| Scripting or debugging | `window.__DSH_AUDIO_CUE__` — `.toggle()`, `.setEnabled(bool)`, `.state()` |
+| Scripting or debugging | `window.__DSH_AUDIO_CUE__` — `.toggle()`, `.setEnabled(bool)`, `.setPosition(px)`, `.state()` |
 | Default for a fresh browser | **on**; set the storage key to `"off"` to change it |
 
 Volume constants (`LOOP_VOLUME`, `CHIME_VOLUME`, `FADE_FACTOR`) are at the top of

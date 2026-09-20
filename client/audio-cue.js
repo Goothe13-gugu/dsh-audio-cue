@@ -162,9 +162,100 @@
     renderButton()
   }
 
-  // The only DOM this plugin adds: a 22px toggle, out of the way in the
-  // bottom-left corner, so silencing it never requires uninstalling.
+  // The only DOM this plugin adds: a 22px toggle, so silencing it never
+  // requires uninstalling. It docks to the right edge of the host sidebar
+  // rather than to a screen corner, because the host keeps its own controls in
+  // the sidebar footer and a corner button lands on top of them.
   var button = null
+
+  // --- position ---------------------------------------------------------
+  var POS_KEY = 'dsh-audio-cue.left'
+  var DEFAULT_LEFT = 412
+  var EDGE_GAP = 12
+  var BOTTOM = 12
+
+  /**
+   * Right edge of the host sidebar, or null when that hook is absent. DSH marks
+   * the sidebar root with `data-dsh-sidebar-root` -- a stable semantic hook, not
+   * a hashed CSS-module class -- and measuring it is what keeps the button clear
+   * of the host's own controls at every sidebar width.
+   */
+  function sidebarRightEdge() {
+    try {
+      var root = document.querySelector('[data-dsh-sidebar-root]')
+      if (!root) return null
+      var rect = root.getBoundingClientRect()
+      if (!rect || rect.width <= 0) return null
+      return rect.right
+    } catch (err) {
+      return null
+    }
+  }
+
+  /** A manually saved left offset, or null when the user never set one. */
+  function savedLeft() {
+    try {
+      var raw = window.localStorage.getItem(POS_KEY)
+      if (raw === null) return null
+      var value = Number(raw)
+      return isFinite(value) ? value : null
+    } catch (err) {
+      return null
+    }
+  }
+
+  /**
+   * Where the button wants to sit: a saved override wins, otherwise just right
+   * of the sidebar, otherwise DEFAULT_LEFT (which clears a full-width sidebar
+   * on a layout that offers no hook). Always clamped into the viewport.
+   */
+  function positionLeft() {
+    var override = savedLeft()
+    var edge = sidebarRightEdge()
+    var left = override !== null ? override : edge === null ? DEFAULT_LEFT : edge + EDGE_GAP
+    return Math.max(4, Math.min(left, window.innerWidth - 32))
+  }
+
+  /** Apply the position, skipping the style write when nothing moved. */
+  function applyPosition() {
+    if (button === null) return
+    var left = positionLeft() + 'px'
+    if (button.style.left !== left) button.style.left = left
+  }
+
+  /** Save a manual offset (null clears it) and re-apply it. */
+  function setPosition(left) {
+    try {
+      if (left === null) window.localStorage.removeItem(POS_KEY)
+      else window.localStorage.setItem(POS_KEY, String(left))
+    } catch (err) {
+      // Private mode: the offset still applies for this page load.
+    }
+    applyPosition()
+  }
+
+  /** Follow the sidebar as it collapses, widens, or animates. */
+  var watching = false
+  function watchSidebar() {
+    if (watching || typeof MutationObserver === 'undefined') return
+    var root = document.querySelector('[data-dsh-sidebar-root]')
+    if (!root) return
+    watching = true
+    new MutationObserver(applyPosition).observe(root, {
+      attributes: true,
+      attributeFilter: ['data-sidebar-collapsed', 'data-dsh-sidebar-wide', 'style'],
+    })
+  }
+
+  // The sidebar is rendered by the shell after this script runs, and a layout
+  // change can replace it, so the observer cannot be attached once and trusted.
+  // The observer is the fast path; this slow poll re-attaches it and re-measures,
+  // and it costs one selector, one rect, and a style write only when the button
+  // actually has to move.
+  window.setInterval(function () {
+    watchSidebar()
+    applyPosition()
+  }, 2000)
   function renderButton() {
     if (button === null) return
     button.textContent = enabled ? '🔊' : '🔇'
@@ -179,8 +270,7 @@
     button.setAttribute('aria-label', 'dsh-audio-cue')
     var s = button.style
     s.position = 'fixed'
-    s.left = '12px'
-    s.bottom = '12px'
+    s.bottom = BOTTOM + 'px'
     s.zIndex = '2147483000'
     s.width = '22px'
     s.height = '22px'
@@ -192,7 +282,7 @@
     s.background = 'transparent'
     s.border = '1px solid currentColor'
     s.borderRadius = '50%'
-    s.transition = 'opacity 120ms linear'
+    s.transition = 'opacity 120ms linear, left 160ms ease'
     button.addEventListener('mouseenter', function () {
       s.opacity = '1'
     })
@@ -204,6 +294,9 @@
     })
     renderButton()
     document.body.appendChild(button)
+    applyPosition()
+    window.addEventListener('resize', applyPosition)
+    watchSidebar()
   }
 
   if (document.body) mountButton()
@@ -238,7 +331,14 @@
       return enabled
     },
     setEnabled: setEnabled,
-    toggle: function () {
+    setPosition: setPosition,
+    resetPosition: function () {
+      setPosition(null)
+      return positionLeft()
+    },
+    position: function () {
+      return { left: positionLeft(), bottom: BOTTOM }
+    },    toggle: function () {
       setEnabled(!enabled)
       return enabled
     },
