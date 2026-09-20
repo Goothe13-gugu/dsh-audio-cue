@@ -122,7 +122,7 @@ test('registers its routes and its page injection', () => {
       ['exact', '/dsh-audio-cue/client.js'],
       ['exact', '/dsh-audio-cue/events'],
       ['exact', '/dsh-audio-cue/state.json'],
-      ['prefix', '/dsh-audio-cue/asset/'],
+      ['prefix', '/dsh-audio-cue/asset'],
     ].sort(),
   )
   assert.equal(taps.length, 1, 'the raw tap fallback is registered')
@@ -189,7 +189,7 @@ test('pushes one frame per transition, and a full snapshot on connect', () => {
 
 test('serves whitelisted assets and refuses everything else', () => {
   const { routes } = mount()
-  const assets = routeFor(routes, '/dsh-audio-cue/asset/')
+  const assets = routeFor(routes, '/dsh-audio-cue/asset')
 
   const ogg = fakeResponse()
   assets.handler(fakeRequest('/dsh-audio-cue/asset/loop.ogg'), ogg)
@@ -268,7 +268,7 @@ test('the browser half and the host agree on routes and asset names', async () =
   assert.ok(assets.length >= 3, `expected the browser half to reference its assets, saw ${assets.length}`)
   for (const asset of assets) {
     const res = fakeResponse()
-    routeFor(routes, `${prefix}/asset/`).handler(fakeRequest(`${prefix}/asset/${asset}`), res)
+    routeFor(routes, `${prefix}/asset`).handler(fakeRequest(`${prefix}/asset/${asset}`), res)
     assert.equal(res.status, 200, `the browser half asks for ${asset}, which the host does not serve`)
     assert.match(res.headers['Content-Type'], /^audio\//, `${asset} is not served as audio`)
   }
@@ -276,4 +276,40 @@ test('the browser half and the host agree on routes and asset names', async () =
   for (const endpoint of ['events', 'client.js']) {
     assert.ok(source.includes(`${prefix}/${endpoint}`) === false || routes.some((entry) => entry.path === `${prefix}/${endpoint}`))
   }
+})
+
+test('prefix routes survive the matcher the server actually uses', () => {
+  // The regression this guards: a prefix registered with a trailing slash never
+  // matches a real request, because the server compares against `prefix + '/'`.
+  // Calling a handler directly (as the other tests do) cannot see that, so this
+  // test reproduces the server's matching rule instead.
+  const { routes } = mount()
+  const match = (pathname) => {
+    const exact = routes.find((entry) => entry.kind === 'exact' && entry.path === pathname)
+    if (exact !== undefined) return exact
+    let best
+    for (const entry of routes) {
+      if (entry.kind !== 'prefix') continue
+      if (pathname !== entry.path && !pathname.startsWith(`${entry.path}/`)) continue
+      if (best === undefined || entry.path.length > best.path.length) best = entry
+    }
+    return best
+  }
+
+  for (const pathname of [
+    '/dsh-audio-cue/asset/loop.ogg',
+    '/dsh-audio-cue/asset/loop.mp3',
+    '/dsh-audio-cue/asset/needs-you.mp3',
+  ]) {
+    const entry = match(pathname)
+    assert.ok(entry, `${pathname} matches no route at all`)
+    assert.ok(
+      !entry.path.endsWith('/'),
+      `prefix ${entry.path} ends with a slash, so the real matcher can never select it`,
+    )
+  }
+
+  assert.equal(match('/dsh-audio-cue/asset')?.path, '/dsh-audio-cue/asset')
+  assert.equal(match('/dsh-audio-cue/state.json')?.kind, 'exact')
+  assert.equal(match('/dsh-audio-cue/nope'), undefined, 'nothing claims an unknown path')
 })
