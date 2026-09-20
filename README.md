@@ -155,6 +155,7 @@ __DSH_AUDIO_CUE__.setEnabled(false)             // false = muted
 __DSH_AUDIO_CUE__.open()                        // open or close the panel
 __DSH_AUDIO_CUE__.settings()                    // the last payload from the host
 __DSH_AUDIO_CUE__.refresh()                     // re-read the store
+__DSH_AUDIO_CUE__.history()                     // the last state changes, and what each one did
 __DSH_AUDIO_CUE__.setPosition(520)              // nudge the button; resetPosition() undoes it
 ```
 
@@ -204,11 +205,12 @@ The state is also available as plain JSON, which is the quickest way to debug it
 
 ```sh
 curl http://127.0.0.1:<port>/dsh-audio-cue/state.json
-# {"bootId":"k3f9a1","seq":7,"working":1,"waiting":0}
+# {"bootId":"k3f9a1","seq":7,"working":1,"waiting":0,"sessions":[{"id":"27410d27","waiting":false}]}
 ```
 
 Use the port your GUI is served on — it is in `DSH_WEB_URL`, and it changes
-between launches.
+between launches. `sessions` is the breakdown behind the counts: work in *any*
+session keeps the sound on, so it is what answers "why is it still playing?"
 
 ## Bring your own audio
 

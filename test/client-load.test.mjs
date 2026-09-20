@@ -431,3 +431,26 @@ test('the panel offers both playback modes and stores the choice', async () => {
   assert.equal(puts.length, 1, 'changing it writes the setting once')
   assert.equal(puts[0].playback, 'restart')
 })
+test('the client records what it received, and what it did about it', async () => {
+  const source = await readFile(CLIENT, 'utf8')
+  const env = makeEnvironment()
+  vm.createContext(env.sandbox)
+  vm.runInContext(source, env.sandbox, { filename: 'audio-cue.js' })
+  await flush()
+
+  const feed = env.FakeEventSource.last
+  feed.onmessage({ data: JSON.stringify({ working: 1, waiting: 0 }) })
+  feed.onmessage({ data: JSON.stringify({ working: 1, waiting: 0 }) })
+  feed.onmessage({ data: JSON.stringify({ working: 1, waiting: 1 }) })
+  feed.onmessage({ data: JSON.stringify({ working: 0, waiting: 0 }) })
+
+  // Spread into this realm before comparing: the array came from inside the vm
+  // context, so its prototype is not this file's Array.prototype and a deep
+  // comparison would fail with "same structure but not reference-equal".
+  const log = [...env.window.__DSH_AUDIO_CUE__.history()]
+  assert.equal(log.length, 3, `only real changes are kept, saw ${JSON.stringify(log)}`)
+  assert.deepEqual(log.map((entry) => entry.action), ['loop', 'chime', 'silence (idle)'])
+  assert.deepEqual(log.map((entry) => entry.working), [1, 1, 0])
+  assert.deepEqual(log.map((entry) => entry.waiting), [0, 1, 0])
+  assert.match(log[0].at, /^\d\d:\d\d:\d\d\.\d\d\d$/, 'each entry is timestamped')
+})

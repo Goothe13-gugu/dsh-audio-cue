@@ -328,8 +328,30 @@
     }
   }
 
+  /**
+   * The last state changes, and what the client did about each. A report of "it
+   * would not stop" is only answerable from what the page actually received, and
+   * a heartbeat repeats the same frame every fifteen seconds -- so only real
+   * changes are kept, which is also what makes the list readable.
+   */
+  var history = []
+
+  function note(previous, state, action) {
+    if (previous && previous.working === state.working && previous.waiting === state.waiting) return
+    history.push({
+      at: new Date().toISOString().slice(11, 23),
+      working: state.working,
+      waiting: state.waiting,
+      action: action,
+      muted: settings.muted,
+      volume: Math.round(current * 100),
+    })
+    if (history.length > 40) history.shift()
+  }
+
   /** Turn one snapshot into sound. */
   function apply(state) {
+    var previous = lastState
     lastState = state
     if (!state) return
     if (state.working > 0 && state.waiting > 0) {
@@ -337,6 +359,7 @@
       fadeTo(0)
       if (!wasWaiting && !settings.muted) playApproval()
       wasWaiting = true
+      note(previous, state, 'chime')
       return
     }
     wasWaiting = false
@@ -351,10 +374,12 @@
     looping = wantLoop
     if (!wantLoop) {
       fadeTo(0)
+      note(previous, state, settings.muted ? 'silence (muted)' : state.working > 0 ? 'silence (cue off)' : 'silence (idle)')
       return
     }
     startLoop()
     fadeTo(settings.volume)
+    note(previous, state, 'loop')
   }
 
   // Browsers refuse to start audio before a user gesture. The first click or
@@ -1095,6 +1120,9 @@
     },
     state: function () {
       return { enabled: !settings.muted, volume: current, last: lastState, legacy: legacy }
+    },
+    history: function () {
+      return history.slice()
     },
   }
 })()

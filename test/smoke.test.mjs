@@ -844,3 +844,29 @@ test('the playback mode defaults to resuming, and restarting is remembered', asy
     assert.equal(JSON.parse(healed.body).playback, 'resume')
   })
 })
+test('the snapshot names which sessions are keeping the sound on', () => {
+  const { routes, listeners } = mount()
+  const read = () => {
+    const res = fakeResponse()
+    routeFor(routes, '/dsh-audio-cue/state.json').handler(fakeRequest('/dsh-audio-cue/state.json'), res)
+    return snapshotOf(res)
+  }
+  const emit = (session, event) => listeners.get('session/event')(session, event)
+
+  emit({ id: 'session-aaaa1111bbbb' }, { type: 'turn/start', data: { turn: 1 } })
+  emit({ id: 'session-cccc2222dddd' }, { type: 'turn/start', data: { turn: 1 } })
+  const both = read()
+  assert.equal(both.working, 2)
+  assert.equal(both.sessions.length, 2, 'both open sessions are named')
+  assert.ok(both.sessions.every((entry) => entry.id.length === 8), 'and the ids are shortened')
+
+  emit({ id: 'session-aaaa1111bbbb' }, { type: 'approval/asked', data: {} })
+  assert.equal(read().sessions.filter((entry) => entry.waiting).length, 1, 'the waiting one is marked')
+
+  emit({ id: 'session-aaaa1111bbbb' }, { type: 'turn/end', data: { turn: 1 } })
+  assert.equal(read().sessions.length, 1, 'a closed session drops out of the list')
+
+  emit({ id: 'session-cccc2222dddd' }, { type: 'turn/end', data: { turn: 1 } })
+  assert.deepEqual(read().sessions, [])
+  assert.equal(read().working, 0)
+})

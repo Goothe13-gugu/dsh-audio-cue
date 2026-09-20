@@ -137,6 +137,7 @@ __DSH_AUDIO_CUE__.setEnabled(false)             // false = 静音
 __DSH_AUDIO_CUE__.open()                        // 打开/关闭面板
 __DSH_AUDIO_CUE__.settings()                    // 宿主最近一次返回的配置
 __DSH_AUDIO_CUE__.refresh()                     // 重新读取存储
+__DSH_AUDIO_CUE__.history()                     // 最近的状态变化，以及各自触发了什么
 __DSH_AUDIO_CUE__.setPosition(520)              // 挪动按钮；resetPosition() 撤销
 ```
 
@@ -170,12 +171,12 @@ waiting > 0                 -> 静音 + 每次转换响一声提示音
 - **刷新页面不会继承过期状态**。每条连接先收到一次全量快照，而宿主只把状态放在内存里。
 - **宿主挂了就静音**。事件流带心跳，心跳停了页面会安静下来并重连，而不是永远循环。
 
-状态也可以直接取 JSON，这是最快的排障方式：
+状态也可以直接取 JSON，这是最快的排障方式。其中 `sessions` 是计数背后的明细——**任何**会话在工作都会让声音继续，所以它是"为什么还在响"这个问题的答案：
 
 ```sh
 # 端口用 GUI 实际监听的（见 DSH_WEB_URL），每次启动都可能不同
 curl http://127.0.0.1:<port>/dsh-audio-cue/state.json
-# {"bootId":"k3f9a1","seq":7,"working":1,"waiting":0}
+# {"bootId":"k3f9a1","seq":7,"working":1,"waiting":0,"sessions":[{"id":"27410d27","waiting":false}]}
 ```
 
 ## 换成你自己的音频
