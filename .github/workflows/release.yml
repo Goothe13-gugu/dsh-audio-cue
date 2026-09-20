@@ -1,7 +1,20 @@
 name: release
 
-# Publishing a GitHub release from a version tag publishes the same version to
-# npm. Bump "version" in package.json, tag it `v<version>`, push the tag.
+# Publishing a version tag publishes that same version to npm.
+#
+# Authentication is OIDC trusted publishing: no npm token is stored anywhere.
+# npm accepts a publish from this workflow only, and signs provenance
+# automatically. Three things have to be true:
+#
+#   1. This workflow is configured as the package's trusted publisher on
+#      npmjs.com (the package's settings -> Trusted Publisher -> GitHub:
+#      owner `Goothe`, repository `dsh-audio-cue`, workflow `release.yml`).
+#   2. The runner has npm 11.5.1 or newer, which is why Node is pinned to 24 --
+#      Node 22 ships npm 10 and would fail the OIDC exchange.
+#   3. The repository is public, if provenance matters. It is.
+#
+# A package has to exist before it can have a trusted publisher, so the FIRST
+# release is published by hand; see PUBLISHING.md.
 on:
   push:
     tags:
@@ -13,17 +26,28 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      # Required for npm provenance.
+      # Required for trusted publishing: this is the OIDC token.
       id-token: write
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           registry-url: 'https://registry.npmjs.org'
 
-      # Refuse to publish a tag whose version does not match package.json — this
+      # Fail with a sentence instead of an opaque OIDC error.
+      - name: Check the npm version trusted publishing needs
+        run: |
+          npm --version
+          major=$(npm --version | cut -d. -f1)
+          minor=$(npm --version | cut -d. -f2)
+          if [ "$major" -lt 11 ] || { [ "$major" -eq 11 ] && [ "$minor" -lt 5 ]; }; then
+            echo "npm 11.5.1 or newer is required for trusted publishing; this runner has $(npm --version)" >&2
+            exit 1
+          fi
+
+      # Refuse to publish a tag whose version does not match package.json -- this
       # is the only check that keeps the tag and the published artifact aligned.
       - name: Verify the tag matches package.json
         run: |
@@ -37,7 +61,7 @@ jobs:
       - name: Check the published file list
         run: npm pack --dry-run
 
+      # No token and no --provenance flag: trusted publishing authenticates with
+      # the OIDC token and attests provenance by default.
       - name: Publish
-        run: npm publish --access public --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public
