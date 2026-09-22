@@ -347,7 +347,11 @@ test('a cue pointing at a deleted file is repaired, not listed as a phantom', as
 test('the cue list names the shipped cues, and marks a default only when there is a choice', async () => {
   const source = await readFile(CLIENT, 'utf8')
   const cues = {
-    working: [{ id: 'let-me-go', name: 'let me go' }, { id: 'loop', name: '合成垫音' }],
+    working: [
+      { id: 'let-me-go', name: 'let me go' },
+      { id: 'let-me-go-ssr', name: 'let me go SSR' },
+      { id: 'loop', name: '底噪' },
+    ],
     approval: [{ id: 'needs-you', name: '默认提示音' }],
   }
   const env = makeEnvironment(settingsPayload({ cues }))
@@ -362,7 +366,11 @@ test('the cue list names the shipped cues, and marks a default only when there i
     'the default cue says what it is',
   )
   assert.ok(
-    options.some((entry) => entry.text === '合成垫音' && entry.value === 'builtin:loop'),
+    options.some((entry) => entry.text === 'let me go SSR' && entry.value === 'builtin:let-me-go-ssr'),
+    'the SSR clip is a real choice',
+  )
+  assert.ok(
+    options.some((entry) => entry.text === '底噪' && entry.value === 'builtin:loop'),
     'the synthesized pad is a real choice',
   )
   assert.ok(
@@ -389,7 +397,11 @@ test('choosing the synthesized pad stores that cue', async () => {
   const env = makeEnvironment(
     settingsPayload({
       cues: {
-        working: [{ id: 'let-me-go', name: 'let me go' }, { id: 'loop', name: '合成垫音' }],
+        working: [
+          { id: 'let-me-go', name: 'let me go' },
+          { id: 'let-me-go-ssr', name: 'let me go SSR' },
+          { id: 'loop', name: '底噪' },
+        ],
         approval: [{ id: 'needs-you', name: '默认提示音' }],
       },
       slots: { working: { kind: 'builtin', id: 'let-me-go' }, approval: { kind: 'builtin', id: 'needs-you' } },

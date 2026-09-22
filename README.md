@@ -224,20 +224,22 @@ deleted afterwards.
 | Size limit | 8 MB per file |
 | How the type is decided | the `Content-Type` header, or the file name when the browser reports an opaque type |
 
-The shipped cues are:
-
 The shipped cues are real choices in the panel, not one option and one hidden
 fallback:
 
 - **`let me go`** — the default working cue. Third-party work, bundled with the
   author's permission: see [CREDITS.md](./CREDITS.md). It ships as AAC (`.m4a`)
   because every browser decodes it, Safari included.
-- **合成垫音** — a four-second synthesized pad, seamless at the loop point, for
-  when a three-minute track is more than you want. It is also the decoder
-  fallback for `let me go`, so a browser that cannot play AAC still gets a shipped
-  cue rather than a 404.
+- **`let me go SSR`** — a 20-second clip from the same work, bundled at the
+  author's request. Short enough to loop without your noticing where it starts.
+- **底噪** — a four-second synthesized pad, seamless at the loop point, for when
+  any music is more than you want behind your work.
 - **默认提示音** — the chime: a two-note synthesized placeholder, generated with
   `ffmpeg` (the command is in [CHANGELOG.md](./CHANGELOG.md)).
+
+Whatever a slot is set to still has to be decodable: the pad ships in both Ogg and
+MP3 and sits last in that order, so a browser that cannot play AAC ends up with it
+rather than a 404.
 
 A loop that is not seamless will click at every repeat. The synthesized
 placeholder is measured at a wrap discontinuity of about −96 dBFS; a song will

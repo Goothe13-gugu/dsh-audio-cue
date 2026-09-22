@@ -807,8 +807,8 @@ test('every shipped cue is listed, and the synthesized pad is a real choice', as
     const { payload } = await readState(routes)
     assert.deepEqual(
       payload.cues.working.map((cue) => cue.name),
-      ['let me go', '合成垫音'],
-      'both shipped working cues are offered, default first',
+      ['let me go', 'let me go SSR', '底噪'],
+      'every shipped working cue is offered, default first',
     )
     assert.deepEqual(payload.cues.approval.map((cue) => cue.id), ['needs-you'])
 
@@ -921,4 +921,43 @@ test('the snapshot names which sessions are keeping the sound on', () => {
   emit({ id: 'session-cccc2222dddd' }, { type: 'turn/end', data: { turn: 1 } })
   assert.deepEqual(read().sessions, [])
   assert.equal(read().working, 0)
+})
+test('the SSR clip is its own cue, and everything decodable ends at the pad', async () => {
+  await withStore(async () => {
+    const { routes } = mount()
+    const choose = async (id) => {
+      const put = bodyRequest(
+        '/dsh-audio-cue/api/settings',
+        'PUT',
+        { 'content-type': 'application/json' },
+        Buffer.from(JSON.stringify({ slots: { working: { kind: 'builtin', id } } })),
+      )
+      await routeFor(routes, '/dsh-audio-cue/api/settings').handler(put, fakeResponse())
+    }
+    const serve = (types) => {
+      const res = fakeResponse()
+      routeFor(routes, '/dsh-audio-cue/audio').handler(fakeRequest(`/dsh-audio-cue/audio/working?types=${types}`), res)
+      return res
+    }
+
+    await choose('let-me-go-ssr')
+    const clip = serve('ogg,mp3,m4a')
+    await choose('let-me-go')
+    const track = serve('ogg,mp3,m4a')
+
+    assert.equal(clip.status, 200)
+    assert.equal(clip.headers['Content-Type'], 'audio/mp4')
+    assert.equal(track.headers['Content-Type'], 'audio/mp4')
+    assert.ok(
+      clip.body.length < track.body.length / 4,
+      `the clip must be far shorter than the full track (${clip.body.length} vs ${track.body.length})`,
+    )
+
+    // A browser that cannot decode AAC gets the pad, not a 404 and not the other
+    // track: the pad is the only cue that ships in two formats.
+    await choose('let-me-go-ssr')
+    const noAac = serve('ogg,mp3')
+    assert.equal(noAac.headers['Content-Type'], 'audio/ogg')
+    assert.ok(noAac.body.length < clip.body.length, 'and it is the short synthesized pad')
+  })
 })
