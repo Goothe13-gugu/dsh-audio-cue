@@ -19,6 +19,12 @@ needs you.
   `sourceEventSeqs` so a parallel tool result cannot clear it early.
 - Broadcasting is deduplicated, because `assistant/chunk` fires once per
   streamed chunk and a frame per chunk would flood every open page.
+- Whether a session is mid-turn is read from the **agent registry** rather than
+  inferred from the log alone. Interrupting a turn sometimes appends no
+  `turn/end`, which left the sound playing until the next turn ended -- or
+  indefinitely, when there was no next turn. A five-second poll publishes a
+  change that no event announced, and the log remains the fallback for a
+  deployment without the registry.
 
 ### The browser half
 

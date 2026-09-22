@@ -161,7 +161,7 @@ __DSH_AUDIO_CUE__.setPosition(520)              // nudge the button; resetPositi
 
 ## How it decides
 
-The host subscribes to the session event log and reduces it to one number:
+The host subscribes to the session event log, checks it against the agent registry, and reduces the result to one number:
 
 | Session event | Effect |
 | --- | --- |
@@ -189,8 +189,14 @@ A few properties fall out of that:
   playing, so delegated work is not silent.
 - **A turn that started before this host did still counts.** Streamed output,
   tool calls, and agent steps can only happen inside a turn, so they open one by
-  themselves. That covers a host that mounted mid-turn or missed a frame, and it
-  cannot leave the sound stuck on, because only `turn/end` closes a session.
+  themselves — which covers a host that mounted mid-turn or missed a frame.
+- **A turn the harness abandons still ends.** Interrupting a turn sometimes
+  appends no `turn/end` at all, and a listener that follows only the log then
+  believes the session is busy forever: the sound plays until the next turn ends,
+  or indefinitely when there is no next turn. Whether a session is mid-turn is
+  therefore asked of the **agent registry** — the same source the product's own
+  session list uses — with the log as the fallback. A poll every five seconds
+  publishes a change that no event announced.
 - **A question is not an approval, but it looks the same to you.** The session
   log has no question event — the ask-user tool is an ordinary tool call — so the
   call is recognised by name (`ask_user_question`, or any tool whose arguments

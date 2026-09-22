@@ -14,7 +14,7 @@ import path from 'node:path'
 import { apply, inject, name } from '../lib/index.js'
 
 /** A stand-in for the Cordis context the plugin is mounted with. */
-function fakeContext() {
+function fakeContext(services = {}) {
   const routes = []
   const listeners = new Map()
   const taps = []
@@ -27,6 +27,16 @@ function fakeContext() {
     },
     effect(setup) {
       cleanups.push(setup())
+    },
+    inject(deps, callback) {
+      // The real Cordis runs this when the services come and go; the tests hand
+      // them over once, synchronously. When they are absent the callback never
+      // fires, which is the no-registry fallback the other suites exercise.
+      if (!deps.every((dep) => services[dep] !== undefined)) return () => {}
+      const provided = {}
+      for (const dep of deps) provided[dep] = services[dep]
+      cleanups.push(callback(provided))
+      return () => {}
     },
     webServer: {
       register(route) {
@@ -115,8 +125,8 @@ function routeForKind(routes, kind, path) {
 }
 
 /** Mount the plugin and hand back everything a test needs to poke at it. */
-function mount() {
-  const harness = fakeContext()
+function mount(services) {
+  const harness = fakeContext(services)
   apply(harness.ctx)
   return harness
 }
@@ -960,4 +970,96 @@ test('the SSR clip is its own cue, and everything decodable ends at the pad', as
     assert.equal(noAac.headers['Content-Type'], 'audio/ogg')
     assert.ok(noAac.body.length < clip.body.length, 'and it is the short synthesized pad')
   })
+})
+/** A stand-in for the agent registry, whose status the plugin treats as authoritative. */
+function fakeAgents(statuses = {}) {
+  const store = new Map(Object.entries(statuses))
+  return {
+    get(id) {
+      const status = store.get(id)
+      return status === undefined ? undefined : { id, status }
+    },
+    set(id, status) {
+      store.set(id, status)
+    },
+    list() {
+      return [...store].map(([id, status]) => ({ id, status }))
+    },
+  }
+}
+
+test('a turn the harness abandons stops the sound, even with no turn/end', () => {
+  const realSetInterval = globalThis.setInterval
+  const timers = []
+  globalThis.setInterval = (fn, ms) => {
+    timers.push({ fn, ms })
+    return 0
+  }
+  try {
+    const registry = fakeAgents()
+    const { routes, listeners } = mount({ agents: registry })
+    const state = routeFor(routes, '/dsh-audio-cue/state.json')
+    const read = () => {
+      const res = fakeResponse()
+      state.handler(fakeRequest('/dsh-audio-cue/state.json'), res)
+      return snapshotOf(res)
+    }
+    const emit = (session, event) => listeners.get('session/event')(session, event)
+
+    registry.set('a', 'running')
+    emit({ id: 'a' }, { type: 'turn/start', data: { turn: 1 } })
+    assert.equal(read().working, 1, 'work in flight')
+
+    // The observed harness behaviour: the user interrupts, no `turn/end` is ever
+    // appended, and the agent simply goes idle.
+    registry.set('a', 'idle')
+    assert.equal(read().working, 0, 'the registry decides, so the sound stops')
+    assert.deepEqual(read().sessions, [])
+
+    // No event announced that, so the poll has to publish it.
+    const before = read().seq
+    for (const timer of timers) timer.fn()
+    const afterFirst = read().seq
+    assert.ok(afterFirst > before, 'the poll publishes a change no event announced')
+
+    // And a poll with nothing to say stays quiet: the sequence number it bumps
+    // must not read as a change to itself.
+    for (const timer of timers) timer.fn()
+    assert.equal(read().seq, afterFirst, 'a poll with no change must not broadcast')
+  } finally {
+    globalThis.setInterval = realSetInterval
+  }
+})
+
+test('without a registry, turn boundaries still decide', () => {
+  const { routes, listeners } = mount()
+  const state = routeFor(routes, '/dsh-audio-cue/state.json')
+  const read = () => {
+    const res = fakeResponse()
+    state.handler(fakeRequest('/dsh-audio-cue/state.json'), res)
+    return snapshotOf(res)
+  }
+  const emit = (session, event) => listeners.get('session/event')(session, event)
+
+  emit({ id: 'a' }, { type: 'turn/start', data: { turn: 1 } })
+  assert.equal(read().working, 1)
+  emit({ id: 'a' }, { type: 'turn/end', data: { turn: 1 } })
+  assert.equal(read().working, 0, 'turn/end is the fallback signal')
+})
+
+test('a session the registry does not know keeps its event-derived state', () => {
+  const registry = fakeAgents()
+  const { routes, listeners } = mount({ agents: registry })
+  const state = routeFor(routes, '/dsh-audio-cue/state.json')
+  const read = () => {
+    const res = fakeResponse()
+    state.handler(fakeRequest('/dsh-audio-cue/state.json'), res)
+    return snapshotOf(res)
+  }
+  const emit = (session, event) => listeners.get('session/event')(session, event)
+
+  // A session restored from disk may have no live agent yet: fall back rather
+  // than report silence while something is genuinely running.
+  emit({ id: 'restored' }, { type: 'assistant/chunk', data: {} })
+  assert.equal(read().working, 1, 'the fallback still counts it')
 })
