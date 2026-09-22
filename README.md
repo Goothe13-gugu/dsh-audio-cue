@@ -115,7 +115,7 @@ Click the button beside the sidebar.
 | 启用 | Mutes everything. The corner icon follows it. |
 | 音量 | One volume for both the loop and the chime. |
 | 播放方式 | **继续播放** picks up where the track stopped. **从头开始** rewinds it whenever the loop starts again. |
-| 工作中音效 | **无** (silent), the default track, or one of your imports. |
+| 工作中音效 | **无** (silent), one of the shipped cues, or one of your imports. |
 | 需审批音效 | The same choice for the chime. |
 | 导入… | Uploads a file for that cue and selects it. |
 | ▶ | Auditions the cue. The loop is auditioned for 3 seconds, the chime plays once. |
@@ -226,13 +226,18 @@ deleted afterwards.
 
 The shipped cues are:
 
-- **`let me go`** — the working default. Third-party work, bundled with the
+The shipped cues are real choices in the panel, not one option and one hidden
+fallback:
+
+- **`let me go`** — the default working cue. Third-party work, bundled with the
   author's permission: see [CREDITS.md](./CREDITS.md). It ships as AAC (`.m4a`)
-  because every browser decodes it, Safari included; the synthesized Ogg and MP3
-  below it exist as a decoder fallback, so a browser without AAC still gets sound
-  rather than a 404.
-- **The chime** — a two-note synthesized placeholder, generated with `ffmpeg`
-  (the command is in [CHANGELOG.md](./CHANGELOG.md)).
+  because every browser decodes it, Safari included.
+- **合成垫音** — a four-second synthesized pad, seamless at the loop point, for
+  when a three-minute track is more than you want. It is also the decoder
+  fallback for `let me go`, so a browser that cannot play AAC still gets a shipped
+  cue rather than a 404.
+- **默认提示音** — the chime: a two-note synthesized placeholder, generated with
+  `ffmpeg` (the command is in [CHANGELOG.md](./CHANGELOG.md)).
 
 A loop that is not seamless will click at every repeat. The synthesized
 placeholder is measured at a wrap discontinuity of about −96 dBFS; a song will

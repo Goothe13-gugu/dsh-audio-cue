@@ -486,7 +486,10 @@ test('reports defaults when nothing has been configured', async () => {
     assert.equal(status, 200)
     assert.equal(payload.muted, false, 'sound is on out of the box')
     assert.equal(payload.volume, 0.35)
-    assert.deepEqual(payload.slots, { working: { kind: 'builtin' }, approval: { kind: 'builtin' } })
+    assert.deepEqual(payload.slots, {
+      working: { kind: 'builtin', id: 'let-me-go' },
+      approval: { kind: 'builtin', id: 'needs-you' },
+    })
     assert.deepEqual(payload.uploads, [])
     assert.ok(payload.limits.maxUploadBytes > 0)
     assert.ok(payload.limits.types.includes('mp3'))
@@ -798,12 +801,61 @@ test('ending the turn clears a question that was never answered', () => {
   emit({ type: 'turn/end', data: { turn: 1, reason: 'cancelled' } })
   assert.deepEqual([read().working, read().waiting], [0, 0], 'a cancelled turn leaves nothing pending')
 })
-test('the panel is told which default it is offering', async () => {
+test('every shipped cue is listed, and the synthesized pad is a real choice', async () => {
   await withStore(async () => {
     const { routes } = mount()
     const { payload } = await readState(routes)
-    assert.equal(payload.defaultNames.working, 'let me go', 'the working default names its track')
-    assert.equal(payload.defaultNames.approval, undefined, 'the chime needs no name')
+    assert.deepEqual(
+      payload.cues.working.map((cue) => cue.name),
+      ['let me go', '合成垫音'],
+      'both shipped working cues are offered, default first',
+    )
+    assert.deepEqual(payload.cues.approval.map((cue) => cue.id), ['needs-you'])
+
+    // Choosing the pad serves the synthesized file, not the track.
+    const choosePad = bodyRequest(
+      '/dsh-audio-cue/api/settings',
+      'PUT',
+      { 'content-type': 'application/json' },
+      Buffer.from(JSON.stringify({ slots: { working: { kind: 'builtin', id: 'loop' } } })),
+    )
+    const saved = fakeResponse()
+    await routeFor(routes, '/dsh-audio-cue/api/settings').handler(choosePad, saved)
+    assert.deepEqual(JSON.parse(saved.body).slots.working, { kind: 'builtin', id: 'loop' })
+
+    const pad = fakeResponse()
+    routeFor(routes, '/dsh-audio-cue/audio').handler(fakeRequest('/dsh-audio-cue/audio/working?types=ogg,mp3,m4a'), pad)
+    assert.equal(pad.status, 200)
+    assert.equal(pad.headers['Content-Type'], 'audio/ogg', 'the chosen cue wins over the other one')
+    assert.ok(pad.body.length < 100000, `that is the short pad, not the track (${pad.body.length} bytes)`)
+
+    // With the track chosen, a browser that cannot decode AAC still gets the pad.
+    const chooseTrack = bodyRequest(
+      '/dsh-audio-cue/api/settings',
+      'PUT',
+      { 'content-type': 'application/json' },
+      Buffer.from(JSON.stringify({ slots: { working: { kind: 'builtin', id: 'let-me-go' } } })),
+    )
+    await routeFor(routes, '/dsh-audio-cue/api/settings').handler(chooseTrack, fakeResponse())
+
+    const modern = fakeResponse()
+    routeFor(routes, '/dsh-audio-cue/audio').handler(fakeRequest('/dsh-audio-cue/audio/working?types=ogg,mp3,m4a'), modern)
+    assert.equal(modern.headers['Content-Type'], 'audio/mp4')
+
+    const noAac = fakeResponse()
+    routeFor(routes, '/dsh-audio-cue/audio').handler(fakeRequest('/dsh-audio-cue/audio/working?types=ogg,mp3'), noAac)
+    assert.equal(noAac.headers['Content-Type'], 'audio/ogg', 'no AAC support degrades to the shipped pad')
+
+    // A cue id that was never shipped heals to the slot default.
+    const bogus = bodyRequest(
+      '/dsh-audio-cue/api/settings',
+      'PUT',
+      { 'content-type': 'application/json' },
+      Buffer.from(JSON.stringify({ slots: { working: { kind: 'builtin', id: 'never-shipped' } } })),
+    )
+    const healed = fakeResponse()
+    await routeFor(routes, '/dsh-audio-cue/api/settings').handler(bogus, healed)
+    assert.deepEqual(JSON.parse(healed.body).slots.working, { kind: 'builtin', id: 'let-me-go' })
   })
 })
 test('the playback mode defaults to resuming, and restarting is remembered', async () => {

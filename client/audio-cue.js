@@ -841,7 +841,10 @@
   /** Apply a `<select>` value, which encodes kind and id together. */
   function applySlotChoice(slot, value) {
     if (value === 'none') settings.slots[slot] = { kind: 'none' }
-    else if (value === 'builtin') settings.slots[slot] = { kind: 'builtin' }
+    else if (value.indexOf('builtin:') === 0) {
+      var cueId = value.slice(8)
+      settings.slots[slot] = cueId === '' ? { kind: 'builtin' } : { kind: 'builtin', id: cueId }
+    }
     else if (value.indexOf('custom:') === 0) settings.slots[slot] = { kind: 'custom', id: value.slice(7) }
     else return
     setStatus('')
@@ -988,11 +991,21 @@
       var select = fields.selects[slot]
       if (!select) continue
       var choice = (settings.slots && settings.slots[slot]) || { kind: 'none' }
-      var wanted = choice.kind === 'custom' ? 'custom:' + choice.id : choice.kind
-      var defaultName = (settings.defaultNames || {})[slot]
+      // An empty id is what an older host answers with: one unnamed default.
+      var cues = (settings.cues && settings.cues[slot]) || [{ id: '', name: '默认' }]
+      var wanted = choice.kind === 'custom'
+        ? 'custom:' + choice.id
+        : choice.kind === 'builtin'
+          ? 'builtin:' + (choice.id || (cues.length > 0 ? cues[0].id : ''))
+          : choice.kind
       select.textContent = ''
       select.appendChild(cueOption('无', 'none', p))
-      select.appendChild(cueOption(defaultName ? defaultName + '（默认）' : '默认', 'builtin', p))
+      for (var c = 0; c < cues.length; c += 1) {
+        // The first entry is the slot's default; say so only when there is a
+        // choice to make.
+        var cueLabel = cues[c].name + (cues.length > 1 && c === 0 ? '（默认）' : '')
+        select.appendChild(cueOption(cueLabel, 'builtin:' + cues[c].id, p))
+      }
       for (var j = 0; j < uploads.length; j += 1) {
         select.appendChild(cueOption(uploads[j].name, 'custom:' + uploads[j].id, p))
       }

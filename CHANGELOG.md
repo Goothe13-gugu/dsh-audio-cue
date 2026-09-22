@@ -68,8 +68,9 @@ needs you.
   `CREDITS.md`, because a note inside the file survives being extracted from the
   package.
 
-- `loop.ogg` and `loop.mp3` — the synthesized fallback for a browser that cannot
-  play AAC. Every partial completes a whole number of cycles in 4 seconds
+- `loop.ogg` and `loop.mp3` — the synthesized pad, offered as its own cue
+  (合成垫音) as well as the decoder fallback for a browser that cannot play AAC.
+  Every partial completes a whole number of cycles in 4 seconds
   (multiples of 0.25 Hz) and the seam is faded, which makes the loop point
   seamless; the measured wrap discontinuity is about −96 dBFS.
 

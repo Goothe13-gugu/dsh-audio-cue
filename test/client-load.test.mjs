@@ -344,35 +344,76 @@ test('a cue pointing at a deleted file is repaired, not listed as a phantom', as
     `no phantom entry may be listed, saw ${JSON.stringify(labels)}`,
   )
 })
-test('the default working cue is named, and the chime keeps the plain label', async () => {
+test('the cue list names the shipped cues, and marks a default only when there is a choice', async () => {
   const source = await readFile(CLIENT, 'utf8')
-  const env = makeEnvironment(settingsPayload({ defaultNames: { working: 'let me go' } }))
+  const cues = {
+    working: [{ id: 'let-me-go', name: 'let me go' }, { id: 'loop', name: '合成垫音' }],
+    approval: [{ id: 'needs-you', name: '默认提示音' }],
+  }
+  const env = makeEnvironment(settingsPayload({ cues }))
   vm.createContext(env.sandbox)
   vm.runInContext(source, env.sandbox, { filename: 'audio-cue.js' })
   await flush()
 
   env.window.__DSH_AUDIO_CUE__.open()
-  const labels = env.created.filter((entry) => typeof entry.text === 'string')
+  const options = env.created.filter((entry) => typeof entry.text === 'string')
   assert.ok(
-    labels.some((entry) => entry.text === 'let me go（默认）' && entry.value === 'builtin'),
-    'the working cue says what its default actually is',
+    options.some((entry) => entry.text === 'let me go（默认）' && entry.value === 'builtin:let-me-go'),
+    'the default cue says what it is',
   )
   assert.ok(
-    labels.some((entry) => entry.text === '默认' && entry.value === 'builtin'),
-    'the approval cue still shows the plain default',
+    options.some((entry) => entry.text === '合成垫音' && entry.value === 'builtin:loop'),
+    'the synthesized pad is a real choice',
+  )
+  assert.ok(
+    options.some((entry) => entry.text === '默认提示音' && entry.value === 'builtin:needs-you'),
+    'a slot with a single shipped cue needs no default suffix',
   )
 
-  // A host that names nothing must not get an invented label.
+  // An older host answers with no cue list at all; the select must still work
+  // and must still match whatever that host stored.
   const plain = makeEnvironment(settingsPayload())
   vm.createContext(plain.sandbox)
   vm.runInContext(source, plain.sandbox, { filename: 'audio-cue.js' })
   await flush()
   plain.window.__DSH_AUDIO_CUE__.open()
-  const plainLabels = plain.created.filter((entry) => typeof entry.text === 'string').map((entry) => entry.text)
+  const plainOptions = plain.created.filter((entry) => typeof entry.text === 'string')
   assert.ok(
-    !plainLabels.some((label) => label.includes('（默认）')),
-    `no host name, no decorated label, saw ${JSON.stringify(plainLabels)}`,
+    plainOptions.some((entry) => entry.value === 'builtin:'),
+    `a host with no cue list still gets a usable default, saw ${JSON.stringify(plainOptions.map((o) => o.value))}`,
   )
+})
+
+test('choosing the synthesized pad stores that cue', async () => {
+  const source = await readFile(CLIENT, 'utf8')
+  const env = makeEnvironment(
+    settingsPayload({
+      cues: {
+        working: [{ id: 'let-me-go', name: 'let me go' }, { id: 'loop', name: '合成垫音' }],
+        approval: [{ id: 'needs-you', name: '默认提示音' }],
+      },
+      slots: { working: { kind: 'builtin', id: 'let-me-go' }, approval: { kind: 'builtin', id: 'needs-you' } },
+    }),
+  )
+  const puts = []
+  const inner = env.sandbox.fetch
+  env.sandbox.fetch = (url, init) => {
+    if (init && init.method === 'PUT') puts.push(JSON.parse(init.body))
+    return inner(url, init)
+  }
+  vm.createContext(env.sandbox)
+  vm.runInContext(source, env.sandbox, { filename: 'audio-cue.js' })
+  await flush()
+  env.window.__DSH_AUDIO_CUE__.open()
+
+  // Selects are built in order: playback, then one per cue slot.
+  const working = env.created.filter((entry) => entry.tagName === 'SELECT')[1]
+  assert.equal(working.value, 'builtin:let-me-go', 'the select starts on the stored cue')
+
+  working.value = 'builtin:loop'
+  working.dispatch('change')
+  assert.equal(puts.length, 1, 'exactly one settings write')
+  assert.deepEqual(puts[0].slots.working, { kind: 'builtin', id: 'loop' })
 })
 test('restart mode rewinds on the edge, and neither mode rewinds on a heartbeat', async () => {
   const source = await readFile(CLIENT, 'utf8')
