@@ -18,13 +18,13 @@ DeepSeek Harness **思考和工作时自动播放环境音**，需要你介入�
 直接从 GitHub 安装：
 
 ```sh
-dsh plugin --profile web add github:Goothe/dsh-audio-cue
+dsh plugin --profile web add github:Goothe13-gugu/dsh-audio-cue
 ```
 
 想锁定某个版本，而不是跟随默认分支：
 
 ```sh
-dsh plugin --profile web add github:Goothe/dsh-audio-cue#v0.1.0
+dsh plugin --profile web add github:Goothe13-gugu/dsh-audio-cue#v0.1.0
 ```
 
 等这个包上了 npm 之后，短写法也可以：
@@ -259,7 +259,7 @@ Select-String -Path "$env:APPDATA\dsh-desktop\logs\harness.log" -Pattern 'dsh we
 ## 开发
 
 ```sh
-git clone https://github.com/Goothe/dsh-audio-cue
+git clone https://github.com/Goothe13-gugu/dsh-audio-cue
 cd dsh-audio-cue
 dsh plugin --profile web add link:$PWD   # link 安装，不用发包
 npm test

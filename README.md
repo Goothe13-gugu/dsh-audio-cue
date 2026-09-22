@@ -23,13 +23,13 @@ moment it **needs you**.
 Install straight from GitHub:
 
 ```sh
-dsh plugin --profile web add github:Goothe/dsh-audio-cue
+dsh plugin --profile web add github:Goothe13-gugu/dsh-audio-cue
 ```
 
 Pin a release instead of tracking the default branch:
 
 ```sh
-dsh plugin --profile web add github:Goothe/dsh-audio-cue#v0.1.0
+dsh plugin --profile web add github:Goothe13-gugu/dsh-audio-cue#v0.1.0
 ```
 
 Once the package is on npm, the short form works too:
@@ -330,7 +330,7 @@ exposing them.
 ## Development
 
 ```sh
-git clone https://github.com/Goothe/dsh-audio-cue
+git clone https://github.com/Goothe13-gugu/dsh-audio-cue
 cd dsh-audio-cue
 dsh plugin --profile web add link:$PWD   # a link: install needs no publish
 npm test

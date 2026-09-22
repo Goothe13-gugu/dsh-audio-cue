@@ -40,14 +40,14 @@
     "node": ">=22"
   },
   "license": "MIT",
-  "author": "Goothe",
+  "author": "Goothe13-gugu",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Goothe/dsh-audio-cue.git"
+    "url": "git+https://github.com/Goothe13-gugu/dsh-audio-cue.git"
   },
-  "homepage": "https://github.com/Goothe/dsh-audio-cue#readme",
+  "homepage": "https://github.com/Goothe13-gugu/dsh-audio-cue#readme",
   "bugs": {
-    "url": "https://github.com/Goothe/dsh-audio-cue/issues"
+    "url": "https://github.com/Goothe13-gugu/dsh-audio-cue/issues"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1"
