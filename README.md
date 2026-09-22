@@ -20,6 +20,20 @@ moment it **needs you**.
 
 ## Install
 
+Install straight from GitHub:
+
+```sh
+dsh plugin --profile web add github:Goothe/dsh-audio-cue
+```
+
+Pin a release instead of tracking the default branch:
+
+```sh
+dsh plugin --profile web add github:Goothe/dsh-audio-cue#v0.1.0
+```
+
+Once the package is on npm, the short form works too:
+
 ```sh
 dsh plugin --profile web add dsh-audio-cue
 ```

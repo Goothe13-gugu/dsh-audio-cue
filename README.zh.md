@@ -15,6 +15,20 @@ DeepSeek Harness **思考和工作时自动播放环境音**，需要你介入�
 
 ## 安装
 
+直接从 GitHub 安装：
+
+```sh
+dsh plugin --profile web add github:Goothe/dsh-audio-cue
+```
+
+想锁定某个版本，而不是跟随默认分支：
+
+```sh
+dsh plugin --profile web add github:Goothe/dsh-audio-cue#v0.1.0
+```
+
+等这个包上了 npm 之后，短写法也可以：
+
 ```sh
 dsh plugin --profile web add dsh-audio-cue
 ```

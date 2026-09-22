@@ -16,10 +16,14 @@ name: release
 # A package has to exist before it can have a trusted publisher, so the FIRST
 # release is published by hand; see PUBLISHING.md.
 on:
-  push:
-    tags:
-      - 'v*'
+  # Manual until the package is on npm. A tag-triggered publish needs a trusted
+  # publisher configured on npmjs.com, which needs an npm account -- until then a
+  # pushed tag would only turn this workflow red. Switch back by restoring the
+  # commented trigger below, once the trusted publisher is configured.
   workflow_dispatch:
+  # push:
+  #   tags:
+  #     - 'v*'
 
 jobs:
   publish:
