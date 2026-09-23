@@ -1,7 +1,7 @@
 # dsh-audio-cue
 
-Ambient audio while DeepSeek Harness is **thinking or working** — and a chime the
-moment it **needs you**.
+Ambient audio while DeepSeek Harness is **thinking or working**, plus a chime
+when it **needs you**.
 
 [中文说明](./README.zh.md) · [Install](#install) · [The panel](#the-panel) · [How it decides](#how-it-decides) · [Troubleshooting](#troubleshooting)
 
@@ -9,14 +9,12 @@ moment it **needs you**.
 ![demo](./docs/demo.gif)
 -->
 
-- **Working** — a soft track fades in and keeps playing while any session,
-  subagents included, has an open turn.
-- **Needs you** — the loop stops and one chime plays when the agent asks for
+- **Working:** a soft track fades in while any session, including subagents, has
+  an open turn.
+- **Needs you:** the loop stops and a chime plays when the agent asks for
   approval **or asks you a question**.
-- **Idle** — the loop fades out on its own. Nothing keeps playing after the work
-  stops.
-- **One small button** beside the sidebar opens the panel. No settings file to
-  edit by hand.
+- **Idle:** the loop fades out when work stops.
+- A small sidebar button opens the panel. No settings file needs hand editing.
 
 ## Install
 
@@ -38,10 +36,9 @@ Once the package is on npm, the short form works too:
 dsh plugin --profile web add dsh-audio-cue
 ```
 
-Then restart the profile, so the host mounts the new plugin row.
+Restart the profile so the host mounts the plugin.
 
-In the desktop app the profile lives in the app's own harness home, so point the
-CLI at it first:
+For the desktop app, point the CLI at the app's harness home first:
 
 ```powershell
 $env:DSH_HOME = "$env:APPDATA\dsh-desktop\harness"
@@ -56,9 +53,9 @@ dsh plugin --profile web remove dsh-audio-cue
 
 ### Let an agent install it
 
-If you would rather not run any of this by hand, paste the following to the agent
-you are already talking to. It is written to fail loudly rather than report
-success it did not verify, because every step below has a quiet failure mode.
+If you would rather not run the commands yourself, paste this into the agent you
+are already using. It asks the agent to verify each step instead of assuming the
+install worked.
 
 <details>
 <summary>Prompt for an AI agent</summary>
@@ -126,7 +123,7 @@ Click the button beside the sidebar.
 
 | Control | What it does |
 | --- | --- |
-| 启用 | Mutes everything. The corner icon follows it. |
+| 启用 | Mutes all audio. The corner icon follows the same state. |
 | 音量 | One volume for both the loop and the chime. |
 | 播放方式 | **继续播放** picks up where the track stopped. **从头开始** rewinds it whenever the loop starts again. |
 | 工作中音效 | **无** (silent), one of the shipped cues, or one of your imports. |
@@ -135,8 +132,8 @@ Click the button beside the sidebar.
 | ▶ | Auditions the cue. The loop is auditioned for 3 seconds, the chime plays once. |
 | 删除 | Removes an import and resets any cue that used it. |
 
-The volume applies to the chime as well, so a volume of 0 is silent — the panel
-says so by showing the icon muted, not just turned down.
+The volume applies to the chime too. At 0, the panel shows the muted icon rather
+than only lowering the level.
 
 ### Where settings live
 
@@ -148,14 +145,14 @@ $DSH_HOME/dsh-audio-cue/
   uploads/           files you imported, plus their index
 ```
 
-So the configuration follows the harness home: it survives a browser cache wipe,
-a different browser, and a restart. A session pointed at a *different* home has
-its own store, and no plugin.
+Configuration follows the harness home. It survives browser cache clears,
+browser changes, and restarts. A session pointed at a *different* home has its
+own store and plugin install state.
 
-The settings file is written through a temporary file and a rename, so a crash
-cannot leave it half-written. A corrupt or unreadable one falls back to defaults
-instead of refusing to load, and a cue whose file is gone is repaired back to the
-default rather than left silent with no explanation.
+Settings are written through a temporary file and a rename, so a crash cannot
+leave a half-written file. If the file is corrupt or unreadable, the plugin uses
+defaults. If a cue points to a missing file, it falls back to the default cue
+instead of failing silently.
 
 ### Console API
 
@@ -175,7 +172,8 @@ __DSH_AUDIO_CUE__.setPosition(520)              // nudge the button; resetPositi
 
 ## How it decides
 
-The host subscribes to the session event log, checks it against the agent registry, and reduces the result to one number:
+The host subscribes to the session event log, checks it against the agent
+registry, and reduces the result to one number:
 
 | Session event | Effect |
 | --- | --- |
@@ -197,29 +195,26 @@ working > 0, waiting === 0  -> ambient loop, faded in
 waiting > 0                 -> silence + one chime per transition
 ```
 
-A few properties fall out of that:
+A few properties follow from that:
 
 - **Subagents count as work.** Any session with an open turn keeps the loop
   playing, so delegated work is not silent.
-- **A turn that started before this host did still counts.** Streamed output,
-  tool calls, and agent steps can only happen inside a turn, so they open one by
-  themselves — which covers a host that mounted mid-turn or missed a frame.
-- **A turn the harness abandons still ends.** Interrupting a turn sometimes
-  appends no `turn/end` at all, and a listener that follows only the log then
-  believes the session is busy forever: the sound plays until the next turn ends,
-  or indefinitely when there is no next turn. Whether a session is mid-turn is
-  therefore asked of the **agent registry** — the same source the product's own
-  session list uses — with the log as the fallback. A poll every five seconds
-  publishes a change that no event announced.
-- **A question is not an approval, but it looks the same to you.** The session
-  log has no question event — the ask-user tool is an ordinary tool call — so the
-  call is recognised by name (`ask_user_question`, or any tool whose arguments
-  carry `questions`), and the answer is matched back through the result's
-  `sourceEventSeqs` so a parallel tool result cannot clear it early.
-- **A page reload cannot inherit a stale state.** Every connection receives a
-  full snapshot first, and the host keeps the state in memory only.
-- **A dead host means silence.** The stream carries a heartbeat; if it stops, the
-  page goes quiet and reconnects instead of looping forever.
+- **Turns already in progress still count.** Streamed output, tool calls, and
+  agent steps only happen inside a turn, so the plugin can mark the session open
+  even if the host mounted mid-stream or missed an event.
+- **Interrupted turns still end.** Interrupts do not always append `turn/end`.
+  The plugin therefore asks the **agent registry**, the same source used by the
+  product's session list, whether a session is still mid-turn. The event log is
+  the fallback, and a five-second poll publishes changes that no event announced.
+- **Questions sound like approvals.** The session log has no question event, so
+  the plugin recognizes ask-user tool calls by name (`ask_user_question`) or by
+  arguments containing `questions`. It matches the answer through
+  `sourceEventSeqs`, so a parallel tool result cannot clear the waiting state
+  early.
+- **Reloads start fresh.** Every connection receives a full snapshot first, and
+  the host keeps state in memory only.
+- **A dead host means silence.** The stream carries a heartbeat. If it stops,
+  the page goes quiet and reconnects instead of looping forever.
 
 The state is also available as plain JSON, which is the quickest way to debug it:
 
@@ -228,9 +223,10 @@ curl http://127.0.0.1:<port>/dsh-audio-cue/state.json
 # {"bootId":"k3f9a1","seq":7,"working":1,"waiting":0,"sessions":[{"id":"27410d27","waiting":false}]}
 ```
 
-Use the port your GUI is served on — it is in `DSH_WEB_URL`, and it changes
-between launches. `sessions` is the breakdown behind the counts: work in *any*
-session keeps the sound on, so it is what answers "why is it still playing?"
+Use the port your GUI is served on. It is in `DSH_WEB_URL`, and it changes
+between launches. `sessions` shows the sessions behind the counts. Work in
+*any* session keeps the sound on, so this is the field to check when asking
+"why is it still playing?"
 
 ## Bring your own audio
 
@@ -244,26 +240,25 @@ deleted afterwards.
 | Size limit | 8 MB per file |
 | How the type is decided | the `Content-Type` header, or the file name when the browser reports an opaque type |
 
-The shipped cues are real choices in the panel, not one option and one hidden
-fallback:
+The shipped cues are selectable in the panel:
 
-- **`let me go`** — the default working cue. Third-party work, bundled with the
+- **`let me go`:** the default working cue. Third-party work, bundled with the
   author's permission: see [CREDITS.md](./CREDITS.md). It ships as AAC (`.m4a`)
   because every browser decodes it, Safari included.
-- **`let me go SSR`** — a 20-second clip from the same work, bundled at the
+- **`let me go SSR`:** a 20-second clip from the same work, bundled at the
   author's request. Short enough to loop without your noticing where it starts.
-- **底噪** — a four-second synthesized pad, seamless at the loop point, for when
+- **底噪:** a four-second synthesized pad, seamless at the loop point, for when
   any music is more than you want behind your work.
-- **默认提示音** — the chime: a two-note synthesized placeholder, generated with
+- **默认提示音:** the chime, a two-note synthesized placeholder generated with
   `ffmpeg` (the command is in [CHANGELOG.md](./CHANGELOG.md)).
 
-Whatever a slot is set to still has to be decodable: the pad ships in both Ogg and
-MP3 and sits last in that order, so a browser that cannot play AAC ends up with it
-rather than a 404.
+The selected cue still has to be decodable. The pad ships in both Ogg and MP3
+and sits last in the fallback order, so a browser that cannot play AAC gets the
+pad instead of a 404.
 
 A loop that is not seamless will click at every repeat. The synthesized
 placeholder is measured at a wrap discontinuity of about −96 dBFS; a song will
-not be, which is what the **从头开始 / 继续播放** choice is about.
+not be. That is why the **从头开始 / 继续播放** choice exists.
 
 ## Routes
 
@@ -283,35 +278,35 @@ diagnosing:
 | `GET /asset/<name>` | the shipped files |
 | `GET /client.js` | the browser half |
 
-Audio answers are **cached for a year** when the URL pins the bytes: `/audio/<slot>?v=…`
-carries the host's boot id and the file the slot resolved to, and `/uploads/<id>`
-is addressed by an id that is never reused. Unversioned requests, and the
-built-in assets an author may replace in place, are never cached.
+Audio answers are **cached for a year** when the URL pins the bytes:
+`/audio/<slot>?v=…` carries the host boot id and the resolved file, and
+`/uploads/<id>` uses an id that is never reused. Unversioned requests are never
+cached, nor are built-in assets that an author may replace in place.
 
 ## Troubleshooting
 
-**No sound at all.** A browser refuses to start audio before a user gesture:
-click anywhere once (opening the panel counts) and the loop starts. The desktop
-app loads its window over HTTP from the local server and normally allows sound
-outright; a plain browser tab is the strict case. Also check the volume — 0 is
-silent, and the panel will show the icon muted.
+**No sound at all.** A browser refuses to start audio before a user gesture.
+Click anywhere once; opening the panel counts. The desktop app loads its window
+over HTTP from the local server and normally allows sound outright, while a
+plain browser tab is stricter. Also check the volume: 0 is silent, and the panel
+shows the muted icon.
 
 **No button on the page.** The browser half is injected into the index; if it is
 missing, check the profile's `dsh.profile.bundles` really lists `dsh-audio-cue`,
 then restart the host. (Plugins are only mounted at host start.)
 
-**It worked, then the tab went dead.** The host restarted: both the port and the
-token change on every launch, so an open tab and a bookmark both stop working.
-The current URL is in the host log:
+**It worked, then the tab went dead.** The host restarted. The port and token
+change on every launch, so open tabs and bookmarks stop working. The current URL
+is in the host log:
 
 ```powershell
 Select-String -Path "$env:APPDATA\dsh-desktop\logs\harness.log" -Pattern 'dsh web:' | Select-Object -Last 1
 ```
 
 **The plugin is missing from a browser session, along with every other plugin.**
-That session is running against a different harness home — most often a `dsh web`
-started without `DSH_HOME`, which falls back to `~/.dsh` and initialises a fresh
-profile with no plugins at all.
+That session is using a different harness home. This most often happens when
+`dsh web` starts without `DSH_HOME`, falls back to `~/.dsh`, and initializes a
+fresh profile with no plugins.
 
 **Two audio streams at once.** The page is open in more than one tab; each plays
 independently. Mute one.
@@ -322,10 +317,10 @@ nothing is running, please open an issue with that response body.
 ## Security
 
 The plugin's routes are **not authenticated**, matching the rest of the plugin
-ecosystem here. With the default loopback bind that is local-only. If the profile
-binds `0.0.0.0`, these routes are reachable from the network — and
-`POST /api/uploads` writes files under `$DSH_HOME` — so treat a LAN bind as
-exposing them.
+ecosystem here. With the default loopback bind, they are local-only. If the
+profile binds `0.0.0.0`, these routes are reachable from the network, and
+`POST /api/uploads` writes files under `$DSH_HOME`. Treat a LAN bind as exposing
+them.
 
 ## Development
 
@@ -352,10 +347,10 @@ test/client-load.test.mjs  browser half, executed in a DOM stand-in
 cordis.patch.yml      the mount declaration
 ```
 
-`npm test` needs no dependencies and no harness: the host suite mounts the plugin
-into a fake context and talks to its routes, while the browser suite actually
-*runs* the client script against a small DOM so that a syntax error or a broken
-mount fails the build rather than the user.
+`npm test` needs no dependencies and no harness. The host suite mounts the
+plugin into a fake context and calls its routes. The browser suite actually
+*runs* the client script against a small DOM, so syntax errors and broken mounts
+fail in tests instead of on a user's machine.
 
 ## Compatibility
 
@@ -369,11 +364,10 @@ a browser tab.
 
 ## Contributing
 
-Issues and pull requests are welcome. Please run `npm test` before opening a pull
-request; the suites are the reason the last two regressions were caught before
-release rather than after.
+Issues and pull requests are welcome. Please run `npm test` before opening a
+pull request. The suites caught the last two regressions before release.
 
 ## License
 
-MIT for the code. The bundled track is third-party and used with permission —
-see [CREDITS.md](./CREDITS.md).
+MIT for the code. The bundled track is third-party and used with permission; see
+[CREDITS.md](./CREDITS.md).
