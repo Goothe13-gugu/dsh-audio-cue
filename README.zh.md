@@ -21,18 +21,6 @@ DeepSeek Harness **思考和工作时自动播放环境音**，需要你介入�
 dsh plugin --profile web add github:Goothe13-gugu/dsh-audio-cue
 ```
 
-想锁定某个版本，而不是跟随默认分支：
-
-```sh
-dsh plugin --profile web add github:Goothe13-gugu/dsh-audio-cue#v0.1.0
-```
-
-等这个包上了 npm 之后，短写法也可以：
-
-```sh
-dsh plugin --profile web add dsh-audio-cue
-```
-
 然后**重启该 profile**，宿主才会挂载新的插件行。
 
 桌面版的 profile 在应用自己的 harness home 下，所以先把 CLI 指过去：
@@ -50,7 +38,7 @@ dsh plugin --profile web remove dsh-audio-cue
 
 ### 交给 AI 安装
 
-如果你不想手动执行这些步骤，把下面这段直接发给你正在对话的 agent。它是按"宁可报错也不要谎报成功"写的，因为其中每一步都有一个安静的失败方式。
+如果你不想手动执行这些步骤，把下面这段直接发给你正在对话的 agent。
 
 <details>
 <summary>给 AI agent 的 prompt</summary>
